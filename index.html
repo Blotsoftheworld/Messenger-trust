@@ -325,6 +325,9 @@
         <div class="add-friend-card">
             <h3>➕ Добавить друга</h3>
             <p style="color:var(--text-secondary);margin:10px 0;">Введите никнейм пользователя</p>
+            <p style="color:var(--text-muted);font-size:12px;margin-bottom:12px;">
+                💡 <b>Важно:</b> Откройте этот же сайт в новой вкладке и зарегистрируйте второго пользователя
+            </p>
             <div class="input-group" style="margin-bottom:12px;">
                 <input type="text" id="friendNickInput" placeholder="Никнейм друга">
             </div>
@@ -337,19 +340,22 @@
 
     <script>
         (function() {
-            // ========== ХРАНИЛИЩЕ (localStorage как сервер) ==========
+            // ========== СЕРВЕР (общий localStorage для всех вкладок) ==========
             const Server = {
                 getUsers() {
                     return JSON.parse(localStorage.getItem('trust_users') || '[]');
                 },
                 saveUsers(users) {
                     localStorage.setItem('trust_users', JSON.stringify(users));
+                    // Оповещаем другие вкладки об изменении
+                    window.dispatchEvent(new Event('storage'));
                 },
                 getMessages() {
                     return JSON.parse(localStorage.getItem('trust_messages') || '{}');
                 },
                 saveMessages(msgs) {
                     localStorage.setItem('trust_messages', JSON.stringify(msgs));
+                    window.dispatchEvent(new Event('storage'));
                 },
                 register(nick, email, password) {
                     const users = this.getUsers();
@@ -381,7 +387,10 @@
                     const users = this.getUsers();
                     const user = users.find(u => u.nick === userNick);
                     const friend = users.find(u => u.nick === friendNick);
-                    if (!user || !friend) throw new Error('Пользователь не найден');
+                    if (!user) throw new Error('Ваш аккаунт не найден');
+                    if (!friend) throw new Error('Пользователь ' + friendNick + ' не найден. Зарегистрируйте его в новой вкладке');
+                    if (!user.friends) user.friends = [];
+                    if (!friend.friends) friend.friends = [];
                     if (!user.friends.includes(friendNick)) user.friends.push(friendNick);
                     if (!friend.friends.includes(userNick)) friend.friends.push(userNick);
                     this.saveUsers(users);
@@ -520,6 +529,7 @@
 
             function loadProfile() {
                 if (!currentUser) return;
+                currentUser = Server.getUser(currentUser.nick) || currentUser;
                 $('sidebarAvatar').style.background = currentUser.avatarColor;
                 $('sidebarAvatar').textContent = currentUser.nick[0].toUpperCase();
                 $('sidebarNick').textContent = currentUser.nick;
@@ -590,18 +600,30 @@
             messageInput.onkeydown = (e) => { if (e.key === 'Enter') sendBtn.click(); };
             searchChats.oninput = () => refreshChatList(searchChats.value);
 
-            btnAddFriend.onclick = () => { addFriendModal.classList.remove('hidden'); friendNickInput.value = ''; addFriendError.textContent = ''; addFriendSuccess.textContent = ''; };
+            btnAddFriend.onclick = () => { 
+                addFriendModal.classList.remove('hidden'); 
+                friendNickInput.value = ''; 
+                addFriendError.textContent = ''; 
+                addFriendSuccess.textContent = ''; 
+            };
             btnCloseAddFriend.onclick = () => addFriendModal.classList.add('hidden');
             btnConfirmAddFriend.onclick = () => {
                 const nick = friendNickInput.value.trim();
+                addFriendError.textContent = '';
+                addFriendSuccess.textContent = '';
                 if (!nick) return addFriendError.textContent = 'Введите никнейм';
                 if (nick === currentUser.nick) return addFriendError.textContent = 'Нельзя добавить себя';
                 try {
                     Server.addFriend(currentUser.nick, nick);
-                    addFriendSuccess.textContent = '✅ Добавлен!';
+                    addFriendSuccess.textContent = '✅ ' + nick + ' добавлен в друзья!';
                     refreshChatList();
-                    setTimeout(() => addFriendModal.classList.add('hidden'), 1000);
-                } catch(e) { addFriendError.textContent = e.message; }
+                    setTimeout(() => addFriendModal.classList.add('hidden'), 1500);
+                } catch(e) { 
+                    addFriendError.textContent = e.message;
+                    if (e.message.includes('не найден')) {
+                        addFriendError.textContent += ' 💡 Откройте новую вкладку и зарегистрируйте пользователя ' + nick;
+                    }
+                }
             };
 
             btnSettings.onclick = () => { loadProfile(); settingsPanel.classList.add('open'); };
@@ -654,13 +676,22 @@
                 stopRefreshInterval();
                 refreshInterval = setInterval(() => {
                     if (currentUser) {
-                        currentUser = Server.getUser(currentUser.nick);
+                        currentUser = Server.getUser(currentUser.nick) || currentUser;
                         refreshChatList(searchChats.value);
                         if (activeChatPartner) renderMessages();
                     }
-                }, 2000);
+                }, 1000);
             }
             function stopRefreshInterval() { if (refreshInterval) { clearInterval(refreshInterval); refreshInterval = null; } }
+
+            // Слушаем изменения в других вкладках
+            window.addEventListener('storage', () => {
+                if (currentUser) {
+                    currentUser = Server.getUser(currentUser.nick) || currentUser;
+                    refreshChatList(searchChats.value);
+                    if (activeChatPartner) renderMessages();
+                }
+            });
 
             // Автовход
             const saved = localStorage.getItem('trust_current');
