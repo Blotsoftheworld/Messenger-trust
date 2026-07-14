@@ -16,9 +16,9 @@
         
         #authScreen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, #1a0d2e, #080311); z-index: 100; }
         #authScreen.hidden { display: none; }
-        .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; padding: 30px 25px; width: min(400px, 92vw); text-align: center; box-shadow: 0 4px 30px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto; }
-        .card h1 { color: var(--accent); margin: 10px 0; font-size: 26px; }
-        .tabs { display: flex; background: var(--bg); border-radius: 25px; padding: 3px; margin: 15px 0; }
+        .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; padding: 25px; width: min(400px, 92vw); text-align: center; box-shadow: 0 4px 30px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto; }
+        .card h1 { color: var(--accent); margin: 8px 0; font-size: 26px; }
+        .tabs { display: flex; background: var(--bg); border-radius: 25px; padding: 3px; margin: 12px 0; }
         .tab { flex: 1; padding: 8px; border: none; background: none; color: var(--text2); cursor: pointer; border-radius: 22px; font-weight: 600; font-size: 13px; transition: 0.2s; }
         .tab.active { background: var(--accent); color: #fff; }
         .form { display: none; flex-direction: column; gap: 8px; }
@@ -26,12 +26,13 @@
         input, textarea { padding: 10px 12px; background: var(--input); border: 2px solid var(--border); border-radius: 10px; color: var(--text); outline: none; font-size: 14px; font-family: inherit; width: 100%; }
         input:focus, textarea:focus { border-color: var(--accent); }
         button { padding: 10px 16px; background: var(--accent); color: #fff; border: none; border-radius: 20px; cursor: pointer; font-weight: 600; font-size: 14px; transition: 0.2s; }
-        button:hover { opacity: 0.85; }
+        button:hover:not(:disabled) { opacity: 0.85; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         .link { color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; background: none; border: none; padding: 4px; }
         .error { color: var(--red); font-size: 11px; min-height: 14px; }
         .success { color: var(--green); font-size: 11px; }
-        .suggestions { position: absolute; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; max-height: 150px; overflow-y: auto; width: calc(100% - 20px); z-index: 10; display: none; }
-        .suggestion-item { padding: 8px 12px; cursor: pointer; font-size: 13px; }
+        .suggestions { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; max-height: 150px; overflow-y: auto; width: 100%; z-index: 10; display: none; margin-top: 2px; }
+        .suggestion-item { padding: 8px 12px; cursor: pointer; font-size: 13px; text-align: left; }
         .suggestion-item:hover { background: rgba(139,92,246,0.2); }
         
         #appScreen { display: flex; width: 100vw; height: 100dvh; }
@@ -71,6 +72,8 @@
         .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 200; }
         .modal.hidden { display: none; }
         .hidden { display: none !important; }
+        .loading-spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-radius: 50%; border-top-color: transparent; animation: spin 0.6s linear infinite; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         
         @media (max-width: 768px) {
             .sidebar { position: absolute; z-index: 30; width: 100%; min-width: 100%; height: 100dvh; }
@@ -84,7 +87,7 @@
 
 <div id="authScreen">
     <div class="card" id="authCard">
-        <div style="font-size:44px;">💜</div>
+        <div style="font-size:40px;">💜</div>
         <h1>Доверие</h1>
         <p style="color:var(--text2);font-size:13px;">Шифрованный мессенджер</p>
         <div class="tabs" id="authTabs">
@@ -97,7 +100,7 @@
             <input id="loginEmail" type="email" placeholder="Email" autocomplete="off">
             <input id="loginPass" type="password" placeholder="Пароль" autocomplete="off">
             <div class="error" id="loginError"></div>
-            <button type="submit">Войти</button>
+            <button type="submit" id="loginBtn">Войти</button>
             <button type="button" class="link" id="forgotPassBtn">Забыли пароль?</button>
         </form>
         <form class="form" id="regForm">
@@ -106,7 +109,7 @@
             <input id="regPass" type="password" placeholder="Пароль (от 8 символов)" autocomplete="off">
             <input id="regPass2" type="password" placeholder="Повторите пароль" autocomplete="off">
             <div class="error" id="regError"></div>
-            <button type="submit">Зарегистрироваться</button>
+            <button type="submit" id="regBtn">Зарегистрироваться</button>
         </form>
         <form class="form" id="resetForm">
             <p style="font-size:12px;color:var(--text2);">Введите ник и email для сброса пароля</p>
@@ -115,7 +118,7 @@
             <input id="resetNewPass" type="password" placeholder="Новый пароль (от 8 символов)" autocomplete="off">
             <div class="error" id="resetError"></div>
             <div class="success" id="resetSuccess"></div>
-            <button type="submit">Сбросить пароль</button>
+            <button type="submit" id="resetBtn">Сбросить пароль</button>
             <button type="button" class="link" id="backToLogin">← Назад ко входу</button>
         </form>
     </div>
@@ -186,15 +189,14 @@
         <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:6px;">
             <input type="checkbox" id="encryptionToggle" checked onchange="toggleEncryption()"> Шифрование сообщений
         </label>
-        <p style="font-size:10px;color:var(--text3);">Сообщения шифруются перед отправкой</p>
     </div>
     <div class="settings-section">
         <h3>Цвет темы</h3>
         <div class="color-row" id="themeColors"></div>
     </div>
     <div class="settings-section" style="text-align:center;">
-        <h3>Поддержать проект</h3>
-        <p style="font-size:11px;color:var(--text2);margin-bottom:8px;">Донат поможет развитию мессенджера</p>
+        <h3>💜 Поддержать проект</h3>
+        <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Спасибо всем, кто хочет помочь!<br>Вы лучшие! Ваша поддержка делает мессенджер лучше.</p>
         <button class="donate-btn" onclick="showDonate()">💜 Задонатить</button>
     </div>
     <div style="padding:14px;display:flex;flex-direction:column;gap:8px">
@@ -204,11 +206,11 @@
 </div>
 
 <div class="modal hidden" id="addFriendModal">
-    <div class="card" style="position:relative;">
+    <div class="card">
         <h3>➕ Добавить друга</h3>
         <p style="color:var(--text2);font-size:12px;margin:6px 0">Введите никнейм</p>
         <div style="position:relative;">
-            <input id="friendNickInput" placeholder="Никнейм" style="margin-bottom:0;" oninput="searchUsers()" onfocus="searchUsers()" autocomplete="off">
+            <input id="friendNickInput" placeholder="Никнейм" oninput="searchUsers()" onfocus="searchUsers()" autocomplete="off">
             <div class="suggestions" id="userSuggestions"></div>
         </div>
         <div class="error" id="addFriendError"></div>
@@ -220,16 +222,13 @@
 
 <div class="modal hidden" id="donateModal">
     <div class="card">
-        <h3>💜 Поддержать Доверие</h3>
-        <p style="color:var(--text2);font-size:13px;margin:10px 0;">Спасибо за вашу поддержку!</p>
-        <div style="background:var(--input);border-radius:10px;padding:15px;margin:10px 0;font-size:12px;word-break:break-all;">
-            <p style="margin-bottom:8px;">Bitcoin:</p>
-            <code style="color:var(--accent);">bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq</code>
-            <p style="margin:8px 0;">USDT (TRC20):</p>
-            <code style="color:var(--accent);">TXo1cC7Yd3H9vBmQpW5nKjL2xRsAeF8tU</code>
+        <h3>💜 Спасибо за поддержку!</h3>
+        <p style="color:var(--text2);font-size:13px;margin:10px 0;">Вы помогаете проекту становиться лучше!</p>
+        <div style="background:var(--input);border-radius:10px;padding:15px;margin:10px 0;font-size:13px;">
+            <p style="margin-bottom:8px;">❤️ Спасибо всем, кто поддерживает Доверие!</p>
+            <p style="color:var(--accent);">Вы — лучшие! Вместе мы сделаем мессенджер ещё круче.</p>
         </div>
-        <p style="font-size:11px;color:var(--text3);">Ваша помощь делает мессенджер лучше!</p>
-        <button onclick="$('donateModal').classList.add('hidden')" style="margin-top:8px;">Закрыть</button>
+        <button onclick="$('donateModal').classList.add('hidden')" style="margin-top:8px;">💜 Спасибо!</button>
     </div>
 </div>
 
@@ -241,12 +240,9 @@ const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 
 let me = null, activeChat = null, refreshTimer = null, messagePollTimer = null;
 let mediaRecorder = null, audioChunks = [], stream = null;
-let pendingFile = null;
-let encryptionEnabled = true;
+let pendingFile = null, encryptionEnabled = true, lastMessageCount = 0;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
-let lastMessageCount = 0;
 
-// Простое шифрование (XOR)
 function encrypt(text, key) {
     if (!text) return '';
     return btoa(text.split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''));
@@ -255,13 +251,12 @@ function encrypt(text, key) {
 function decrypt(encoded, key) {
     if (!encoded) return '';
     try {
-        const text = atob(encoded);
-        return text.split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join('');
+        return atob(encoded).split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join('');
     } catch { return encoded; }
 }
 
 function getEncryptionKey(from, to) {
-    return [from, to].sort().join('_') + '_secret_key';
+    return [from.toLowerCase(), to.toLowerCase()].sort().join('_') + '_key';
 }
 
 async function loadDB() {
@@ -276,9 +271,13 @@ async function saveDB(data) {
     await fetch(API_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY }, body: JSON.stringify(data) });
 }
 
-// АВТОРИЗАЦИЯ
-$('tabLogin').onclick = () => { showAuthTab('login'); };
-$('tabReg').onclick = () => { showAuthTab('reg'); };
+// Нормализация ника (все маленькие буквы)
+function norm(nick) {
+    return (nick || '').toLowerCase().trim();
+}
+
+$('tabLogin').onclick = () => showAuthTab('login');
+$('tabReg').onclick = () => showAuthTab('reg');
 
 function showAuthTab(tab) {
     $('tabLogin').classList.toggle('active', tab === 'login');
@@ -286,6 +285,9 @@ function showAuthTab(tab) {
     $('loginForm').classList.toggle('active', tab === 'login');
     $('regForm').classList.toggle('active', tab === 'reg');
     $('resetForm').classList.remove('active');
+    $('tabReset').style.display = 'none';
+    $('tabLogin').style.display = 'block';
+    $('tabReg').style.display = 'block';
 }
 
 $('forgotPassBtn').onclick = () => {
@@ -296,66 +298,125 @@ $('forgotPassBtn').onclick = () => {
     $('loginForm').classList.remove('active');
     $('regForm').classList.remove('active');
     $('resetForm').classList.add('active');
+    $('tabLogin').classList.remove('active');
+    $('tabReg').classList.remove('active');
 };
 
 $('backToLogin').onclick = () => {
-    $('tabLogin').style.display = 'block';
-    $('tabReg').style.display = 'block';
-    $('tabReset').style.display = 'none';
-    $('tabReset').classList.remove('active');
-    $('resetForm').classList.remove('active');
-    $('loginForm').classList.add('active');
-    $('tabLogin').classList.add('active');
-    $('tabReg').classList.remove('active');
+    showAuthTab('login');
+    $('resetSuccess').textContent = '';
+    $('resetError').textContent = '';
 };
 
 $('resetForm').onsubmit = async (e) => {
     e.preventDefault();
     $('resetError').textContent = '';
     $('resetSuccess').textContent = '';
-    const nick = $('resetNick').value.trim();
-    const email = $('resetEmail').value.trim();
+    const btn = $('resetBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Сброс...';
+    
+    const nick = norm($('resetNick').value);
+    const email = $('resetEmail').value.trim().toLowerCase();
     const newPass = $('resetNewPass').value;
-    if (newPass.length < 8) return $('resetError').textContent = 'Пароль от 8 символов';
+    
+    if (newPass.length < 8) {
+        $('resetError').textContent = 'Пароль от 8 символов';
+        btn.disabled = false;
+        btn.textContent = 'Сбросить пароль';
+        return;
+    }
+    
     const db = await loadDB();
-    const idx = db.users.findIndex(u => u.nick === nick && u.email === email);
-    if (idx === -1) return $('resetError').textContent = 'Пользователь не найден';
+    const idx = db.users.findIndex(u => norm(u.nick) === nick && u.email.toLowerCase() === email);
+    if (idx === -1) {
+        $('resetError').textContent = 'Пользователь не найден';
+        btn.disabled = false;
+        btn.textContent = 'Сбросить пароль';
+        return;
+    }
+    
     db.users[idx].pass = newPass;
     await saveDB(db);
     $('resetSuccess').textContent = 'Пароль изменён! Теперь войдите.';
-    setTimeout(() => {
-        $('backToLogin').click();
-        $('resetSuccess').textContent = '';
-    }, 1500);
+    btn.disabled = false;
+    btn.textContent = 'Сбросить пароль';
+    setTimeout(() => $('backToLogin').click(), 1500);
 };
 
 $('regForm').onsubmit = async (e) => {
     e.preventDefault();
     $('regError').textContent = '';
-    const nick = $('regNick').value.trim(), email = $('regEmail').value.trim();
+    const btn = $('regBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Регистрация...';
+    
+    const nick = norm($('regNick').value);
+    const email = $('regEmail').value.trim().toLowerCase();
     const pass = $('regPass').value, pass2 = $('regPass2').value;
-    if (pass !== pass2) return $('regError').textContent = 'Пароли не совпадают';
-    if (nick.length < 3) return $('regError').textContent = 'Никнейм от 3 символов';
-    if (pass.length < 8) return $('regError').textContent = 'Пароль от 8 символов';
+    
+    if (pass !== pass2) {
+        $('regError').textContent = 'Пароли не совпадают';
+        btn.disabled = false;
+        btn.textContent = 'Зарегистрироваться';
+        return;
+    }
+    if (nick.length < 3) {
+        $('regError').textContent = 'Никнейм от 3 символов';
+        btn.disabled = false;
+        btn.textContent = 'Зарегистрироваться';
+        return;
+    }
+    if (pass.length < 8) {
+        $('regError').textContent = 'Пароль от 8 символов';
+        btn.disabled = false;
+        btn.textContent = 'Зарегистрироваться';
+        return;
+    }
+    
     const db = await loadDB();
-    if (db.users.find(u => u.nick === nick)) return $('regError').textContent = 'Никнейм занят';
+    if (db.users.find(u => norm(u.nick) === nick)) {
+        $('regError').textContent = 'Никнейм занят';
+        btn.disabled = false;
+        btn.textContent = 'Зарегистрироваться';
+        return;
+    }
+    
     const newUser = { nick, email, pass, avatar: '', avatarColor: themeColors[0], status: 'В сети', bio: '', friends: [] };
     db.users.push(newUser);
     await saveDB(db);
     me = newUser;
     localStorage.setItem('trust_session', JSON.stringify({ nick, email }));
+    btn.disabled = false;
+    btn.textContent = 'Зарегистрироваться';
     showApp();
 };
 
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     $('loginError').textContent = '';
-    const nick = $('loginNick').value.trim(), email = $('loginEmail').value.trim(), pass = $('loginPass').value;
+    const btn = $('loginBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="loading-spinner"></span> Вход...';
+    
+    const nick = norm($('loginNick').value);
+    const email = $('loginEmail').value.trim().toLowerCase();
+    const pass = $('loginPass').value;
+    
     const db = await loadDB();
-    const u = db.users.find(u => u.nick === nick && u.email === email && u.pass === pass);
-    if (!u) return $('loginError').textContent = 'Неверные данные';
+    const u = db.users.find(u => norm(u.nick) === nick && u.email.toLowerCase() === email && u.pass === pass);
+    
+    if (!u) {
+        $('loginError').textContent = 'Неверные данные';
+        btn.disabled = false;
+        btn.textContent = 'Войти';
+        return;
+    }
+    
     me = u;
-    localStorage.setItem('trust_session', JSON.stringify({ nick, email }));
+    localStorage.setItem('trust_session', JSON.stringify({ nick: u.nick, email: u.email }));
+    btn.disabled = false;
+    btn.textContent = 'Войти';
     showApp();
 };
 
@@ -399,7 +460,7 @@ function toggleEncryption() {
 async function refresh() {
     if (!me) return;
     const db = await loadDB();
-    me = db.users.find(u => u.nick === me.nick) || me;
+    me = db.users.find(u => norm(u.nick) === norm(me.nick)) || me;
     const chats = [], seen = new Set();
     Object.entries(db.messages || {}).forEach(([id, msgs]) => {
         if (id.includes(me.nick) && msgs.length) {
@@ -409,8 +470,8 @@ async function refresh() {
     });
     (me.friends || []).forEach(f => { if (!seen.has(f)) chats.push({ partner: f, last: 'Начните общение!', time: 0 }); });
     chats.sort((a,b) => b.time - a.time);
-    const q = ($('searchChats').value || '').toLowerCase();
-    const filtered = chats.filter(c => c.partner.toLowerCase().includes(q));
+    const q = norm($('searchChats').value || '');
+    const filtered = chats.filter(c => norm(c.partner).includes(q));
     $('chatList').innerHTML = filtered.length ? filtered.map(c => `
         <div class="chat-item ${activeChat===c.partner?'active':''}" data-p="${c.partner}">
             <div class="avatar" style="background:var(--accent)">${c.partner[0].toUpperCase()}</div>
@@ -462,21 +523,18 @@ async function renderMessages(db) {
     
     $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
         let text = m.text || '';
-        if (m.encrypted && encryptionEnabled) {
-            text = decrypt(text, key) || '[Не удалось расшифровать]';
-        }
+        if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не удалось расшифровать]';
         let content = '';
         if (m.file) {
             if (m.fileType === 'image') content += `<img src="${m.file}" alt="Фото" loading="lazy">`;
             else if (m.fileType === 'video') content += `<video src="${m.file}" controls preload="metadata"></video>`;
             else if (m.fileType === 'audio') content += `<audio src="${m.file}" controls preload="metadata"></audio>`;
-            else content += `<a href="${m.file}" target="_blank" class="file-link">📎 Скачать файл</a>`;
+            else content += `<a href="${m.file}" target="_blank">📎 Файл</a>`;
         }
         if (text) content += `<div>${text}</div>`;
         return `<div class="msg ${m.from===me.nick?'own':'other'}">${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
     }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">💜 Начните переписку!</div>';
     
-    // Плавная прокрутка к новым сообщениям
     const container = $('messagesContainer');
     const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100;
     if (isAtBottom || msgs.length > lastMessageCount) {
@@ -496,12 +554,8 @@ async function sendMessage(text = '', file = null, fileType = '') {
     const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
     
     db.messages[id].push({ 
-        from: me.nick, 
-        text: msgText, 
-        file, 
-        fileType, 
-        time: Date.now(),
-        encrypted: encryptionEnabled && !!text
+        from: me.nick, text: msgText, file, fileType, 
+        time: Date.now(), encrypted: encryptionEnabled && !!text
     });
     await saveDB(db);
     pendingFile = null;
@@ -513,13 +567,8 @@ async function sendMessage(text = '', file = null, fileType = '') {
 
 $('sendBtn').onclick = () => {
     const text = $('messageInput').value.trim();
-    if (pendingFile) {
-        sendMessage(text, pendingFile.data, pendingFile.type);
-        $('messageInput').value = '';
-    } else if (text) {
-        sendMessage(text);
-        $('messageInput').value = '';
-    }
+    if (pendingFile) { sendMessage(text, pendingFile.data, pendingFile.type); $('messageInput').value = ''; }
+    else if (text) { sendMessage(text); $('messageInput').value = ''; }
 };
 
 $('messageInput').onkeydown = e => { if (e.key === 'Enter') $('sendBtn').click(); };
@@ -527,37 +576,27 @@ $('messageInput').onkeydown = e => { if (e.key === 'Enter') $('sendBtn').click()
 function handleFileSelect() {
     const file = $('fileInput').files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('Файл слишком большой (макс 5MB)'); $('fileInput').value = ''; return; }
-    
+    if (file.size > 5*1024*1024) { alert('Файл слишком большой (макс 5MB)'); $('fileInput').value = ''; return; }
     const reader = new FileReader();
     reader.onload = () => {
         const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'file';
         pendingFile = { data: reader.result, type, name: file.name };
-        
         let preview = '';
         if (type === 'image') preview = `<img src="${reader.result}">`;
         else if (type === 'video') preview = `<video src="${reader.result}" controls style="width:60px;height:40px;"></video>`;
-        else if (type === 'audio') preview = `🎵 Аудио: ${file.name}`;
-        else preview = `📎 Файл: ${file.name}`;
-        
-        $('previewBar').innerHTML = `${preview} <span style="flex:1;font-size:11px;color:var(--text2)">Готово к отправке</span> <button onclick="cancelFile()">✕</button>`;
+        else if (type === 'audio') preview = `🎵 ${file.name}`;
+        else preview = `📎 ${file.name}`;
+        $('previewBar').innerHTML = `${preview} <span style="flex:1;font-size:11px;color:var(--text2)">Готово</span> <button onclick="cancelFile()">✕</button>`;
         $('previewBar').classList.remove('hidden');
     };
     reader.readAsDataURL(file);
     $('fileInput').value = '';
 }
 
-function cancelFile() {
-    pendingFile = null;
-    $('previewBar').classList.add('hidden');
-    $('previewBar').innerHTML = '';
-}
+function cancelFile() { pendingFile = null; $('previewBar').classList.add('hidden'); $('previewBar').innerHTML = ''; }
 
 async function toggleVoice() {
-    if (mediaRecorder?.state === 'recording') {
-        mediaRecorder.stop();
-        return;
-    }
+    if (mediaRecorder?.state === 'recording') { mediaRecorder.stop(); return; }
     try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         mediaRecorder = new MediaRecorder(stream);
@@ -567,26 +606,19 @@ async function toggleVoice() {
             const blob = new Blob(audioChunks, { type: 'audio/webm' });
             const reader = new FileReader();
             reader.onload = () => {
-                pendingFile = { data: reader.result, type: 'audio', name: 'Голосовое сообщение' };
-                $('previewBar').innerHTML = `🎤 Голосовое сообщение <span style="flex:1;font-size:11px;color:var(--text2)">Готово</span> <button onclick="cancelFile()">✕</button>`;
+                pendingFile = { data: reader.result, type: 'audio', name: 'Голосовое' };
+                $('previewBar').innerHTML = `🎤 Голосовое <span style="flex:1;font-size:11px;color:var(--text2)">Готово</span> <button onclick="cancelFile()">✕</button>`;
                 $('previewBar').classList.remove('hidden');
             };
             reader.readAsDataURL(blob);
             if (stream) stream.getTracks().forEach(t => t.stop());
             stream = null;
-            $('voiceBtn').textContent = '🎤';
-            $('voiceBtn').style.background = 'var(--input)';
-            $('voiceBtn').style.color = 'var(--text2)';
+            $('voiceBtn').textContent = '🎤'; $('voiceBtn').style.background = 'var(--input)'; $('voiceBtn').style.color = 'var(--text2)';
         };
         mediaRecorder.start();
-        $('voiceBtn').textContent = '⏹';
-        $('voiceBtn').style.background = 'var(--red)';
-        $('voiceBtn').style.color = '#fff';
+        $('voiceBtn').textContent = '⏹'; $('voiceBtn').style.background = 'var(--red)'; $('voiceBtn').style.color = '#fff';
         setTimeout(() => { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }, 15000);
-    } catch (err) {
-        alert('Нет доступа к микрофону. Разрешите доступ в настройках браузера.');
-        console.error('Microphone error:', err);
-    }
+    } catch { alert('Нет доступа к микрофону. Разрешите в настройках браузера.'); }
 }
 
 function updateAvatar() {
@@ -598,33 +630,26 @@ function updateAvatar() {
 }
 
 async function searchUsers() {
-    const query = $('friendNickInput').value.trim().toLowerCase();
+    const query = norm($('friendNickInput').value);
     const sug = $('userSuggestions');
     if (query.length < 1) { sug.style.display = 'none'; return; }
     const db = await loadDB();
-    const matches = db.users.filter(u => u.nick.toLowerCase().includes(query) && u.nick !== me.nick).slice(0, 5);
-    if (matches.length) {
-        sug.innerHTML = matches.map(u => `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}</div>`).join('');
-        sug.style.display = 'block';
-    } else {
-        sug.style.display = 'none';
-    }
+    const matches = db.users.filter(u => norm(u.nick).includes(query) && norm(u.nick) !== norm(me.nick)).slice(0, 5);
+    sug.innerHTML = matches.length ? matches.map(u => `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}</div>`).join('') : '<div class="suggestion-item" style="color:var(--text3)">Никого не найдено</div>';
+    sug.style.display = 'block';
 }
 
-function selectUser(nick) {
-    $('friendNickInput').value = nick;
-    $('userSuggestions').style.display = 'none';
-}
+function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestions').style.display = 'none'; }
 
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
 function closeSettings() { $('settingsPanel').classList.remove('open'); }
 
 $('btnSaveSettings').onclick = async () => {
     const db = await loadDB();
-    const idx = db.users.findIndex(u => u.nick === me.nick);
+    const idx = db.users.findIndex(u => norm(u.nick) === norm(me.nick));
     if (idx === -1) return;
     const newNick = $('settingsNick').value.trim();
-    if (newNick !== me.nick && db.users.find(u => u.nick === newNick)) return alert('Никнейм занят');
+    if (norm(newNick) !== norm(me.nick) && db.users.find(u => norm(u.nick) === norm(newNick))) return alert('Никнейм занят');
     const newPass = $('settingsPass').value;
     if (newPass && newPass.length < 8) return alert('Пароль от 8 символов');
     db.users[idx] = {
@@ -632,7 +657,7 @@ $('btnSaveSettings').onclick = async () => {
         nick: newNick || me.nick,
         status: $('settingsStatus').value.trim() || 'В сети',
         bio: $('settingsBio').value.trim(),
-        email: $('settingsEmail').value.trim() || me.email,
+        email: $('settingsEmail').value.trim().toLowerCase() || me.email,
         avatar: me.avatar,
         avatarColor: me.avatarColor
     };
@@ -645,15 +670,8 @@ $('btnSaveSettings').onclick = async () => {
     refresh();
 };
 
-$('btnLogout').onclick = () => { 
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    localStorage.removeItem('trust_session'); 
-    location.reload(); 
-};
-
-function showDonate() {
-    $('donateModal').classList.remove('hidden');
-}
+$('btnLogout').onclick = () => { if (stream) stream.getTracks().forEach(t => t.stop()); localStorage.removeItem('trust_session'); location.reload(); };
+function showDonate() { $('donateModal').classList.remove('hidden'); }
 
 $('btnAddFriend').onclick = () => { 
     $('addFriendModal').classList.remove('hidden'); 
@@ -662,18 +680,17 @@ $('btnAddFriend').onclick = () => {
     $('addFriendSuccess').textContent = '';
     $('userSuggestions').style.display = 'none';
 };
-
 $('btnCancelAddFriend').onclick = () => $('addFriendModal').classList.add('hidden');
 $('btnConfirmAddFriend').onclick = async () => {
     const nick = $('friendNickInput').value.trim();
     if (!nick) return $('addFriendError').textContent = 'Введите ник';
-    if (nick === me.nick) return $('addFriendError').textContent = 'Это вы';
+    if (norm(nick) === norm(me.nick)) return $('addFriendError').textContent = 'Это вы';
     const db = await loadDB();
-    const friend = db.users.find(u => u.nick === nick);
+    const friend = db.users.find(u => norm(u.nick) === norm(nick));
     if (!friend) return $('addFriendError').textContent = 'Не найден';
-    const u = db.users.find(u => u.nick === me.nick);
-    if (u.friends.includes(nick)) return $('addFriendError').textContent = 'Уже в друзьях';
-    u.friends.push(nick);
+    const u = db.users.find(u => norm(u.nick) === norm(me.nick));
+    if (u.friends.includes(friend.nick)) return $('addFriendError').textContent = 'Уже в друзьях';
+    u.friends.push(friend.nick);
     friend.friends.push(me.nick);
     await saveDB(db);
     $('addFriendSuccess').textContent = '✅ Добавлен!';
@@ -682,19 +699,13 @@ $('btnConfirmAddFriend').onclick = async () => {
 
 $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
+document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display = 'none'; });
 
-document.addEventListener('click', (e) => {
-    if (!$('friendNickInput')?.contains(e.target)) {
-        $('userSuggestions').style.display = 'none';
-    }
-});
-
-// Автовход
 (async () => {
     const saved = JSON.parse(localStorage.getItem('trust_session') || 'null');
     if (saved) {
         const db = await loadDB();
-        const u = db.users.find(u => u.nick === saved.nick && u.email === saved.email);
+        const u = db.users.find(u => norm(u.nick) === norm(saved.nick) && u.email.toLowerCase() === saved.email.toLowerCase());
         if (u) { me = u; showApp(); }
     }
 })();
