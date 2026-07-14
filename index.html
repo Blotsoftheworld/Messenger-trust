@@ -13,7 +13,6 @@
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #000; color: var(--text); height: 100dvh; overflow: hidden; display: flex; }
-        
         #authScreen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, #1a0d2e, #080311); z-index: 100; }
         #authScreen.hidden { display: none; }
         .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; padding: 25px; width: min(400px, 92vw); text-align: center; box-shadow: 0 4px 30px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto; }
@@ -35,14 +34,13 @@
         .suggestion-item:hover { background: rgba(139,92,246,0.2); }
         .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        
         #appScreen { display: flex; width: 100vw; height: 100dvh; }
         #appScreen.hidden { display: none; }
         .sidebar { width: 320px; min-width: 320px; background: var(--bg3); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
         .sidebar-head { padding: 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 8px; }
         .avatar { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 16px; background: var(--accent); background-size: cover; background-position: center; cursor: pointer; flex-shrink: 0; }
         .chat-list { flex: 1; overflow-y: auto; padding: 4px; }
-        .chat-item { display: flex; align-items: center; gap: 8px; padding: 10px 8px; border-radius: 10px; cursor: pointer; transition: 0.15s; }
+        .chat-item { display: flex; align-items: center; gap: 8px; padding: 10px 8px; border-radius: 10px; cursor: pointer; }
         .chat-item:hover { background: rgba(139,92,246,0.08); }
         .chat-item.active { background: rgba(139,92,246,0.18); }
         .main { flex: 1; display: flex; flex-direction: column; background: var(--chat); min-width: 0; }
@@ -59,21 +57,15 @@
         .icon-btn.send { background: var(--accent); color: #fff; }
         .preview-bar { padding: 6px 10px; background: var(--bg2); border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; font-size: 12px; }
         .preview-bar img { width: 40px; height: 40px; object-fit: cover; border-radius: 6px; }
-        .preview-bar button { background: var(--red); padding: 4px 10px; font-size: 11px; border-radius: 12px; }
-        
         .settings-panel { position: fixed; top: 0; right: -100%; width: min(400px, 90vw); height: 100dvh; background: var(--bg2); border-left: 1px solid var(--border); z-index: 50; transition: right 0.3s; display: flex; flex-direction: column; overflow-y: auto; }
         .settings-panel.open { right: 0; }
         .settings-section { padding: 14px; border-bottom: 1px solid var(--border); }
-        .settings-section h3 { font-size: 11px; color: var(--text3); text-transform: uppercase; margin-bottom: 8px; letter-spacing: 0.5px; }
         .color-row { display: flex; gap: 6px; flex-wrap: wrap; }
         .color-dot { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; }
         .color-dot.selected { border-color: #fff; }
-        .donate-btn { background: linear-gradient(135deg, #f59e0b, #ef4444); color: #fff; font-size: 15px; padding: 12px; }
-        
         .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 200; }
         .modal.hidden { display: none; }
         .hidden { display: none !important; }
-        
         @media (max-width: 768px) {
             .sidebar { position: absolute; z-index: 30; width: 100%; min-width: 100%; height: 100dvh; }
             .sidebar.mobile-hidden { display: none; }
@@ -83,13 +75,12 @@
     </style>
 </head>
 <body>
-
 <div id="authScreen">
-    <div class="card" id="authCard">
+    <div class="card">
         <div style="font-size:40px;">💜</div>
         <h1>Доверие</h1>
         <p style="color:var(--text2);font-size:13px;">Шифрованный мессенджер</p>
-        <div class="tabs" id="authTabs">
+        <div class="tabs">
             <button class="tab active" id="tabLogin">Вход</button>
             <button class="tab" id="tabReg">Регистрация</button>
             <button class="tab" id="tabReset" style="display:none;">Сброс</button>
@@ -196,7 +187,7 @@
     <div class="settings-section" style="text-align:center;">
         <h3>💜 Поддержать проект</h3>
         <p style="font-size:12px;color:var(--text2);margin-bottom:10px;line-height:1.5;">Спасибо всем, кто хочет помочь!<br>Вы лучшие! Ваша поддержка делает мессенджер лучше.</p>
-        <button class="donate-btn" onclick="showDonate()">💜 Задонатить</button>
+        <button class="donate-btn" onclick="showDonate()" style="background:linear-gradient(135deg, #f59e0b, #ef4444);color:#fff;font-size:15px;padding:12px;">💜 Задонатить</button>
     </div>
     <div style="padding:14px;display:flex;flex-direction:column;gap:8px">
         <button id="btnSaveSettings">💾 Сохранить</button>
@@ -224,10 +215,10 @@
         <h3>💜 Спасибо за поддержку!</h3>
         <p style="color:var(--text2);font-size:13px;margin:10px 0;">Вы помогаете проекту становиться лучше!</p>
         <div style="background:var(--input);border-radius:10px;padding:15px;margin:10px 0;font-size:13px;">
-            <p style="margin-bottom:8px;">❤️ Спасибо всем, кто поддерживает Доверие!</p>
-            <p style="color:var(--accent);">Вы — лучшие! Вместе мы сделаем мессенджер ещё круче.</p>
+            <p>❤️ Спасибо всем, кто поддерживает Доверие!</p>
+            <p style="color:var(--accent);">Вы — лучшие!</p>
         </div>
-        <button onclick="$('donateModal').classList.add('hidden')" style="margin-top:8px;">💜 Спасибо!</button>
+        <button onclick="$('donateModal').classList.add('hidden')">💜 Спасибо!</button>
     </div>
 </div>
 
@@ -241,8 +232,8 @@ let me = null, activeChat = null, refreshTimer = null;
 let mediaRecorder = null, audioChunks = [], stream = null;
 let pendingFile = null, encryptionEnabled = true;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
+const MAX_JSON_SIZE = 900000; // ~900 КБ для безопасности
 
-// Резервное локальное хранилище
 function localDB() {
     try { return JSON.parse(localStorage.getItem('trust_local_backup') || '{"users":[],"messages":{}}'); }
     catch { return { users: [], messages: {} }; }
@@ -263,24 +254,22 @@ function getEncryptionKey(from, to) {
 }
 function norm(nick) { return (nick || '').toLowerCase().trim(); }
 
-// Улучшенная загрузка с JSONBin с защитой от потери данных
 async function loadDB() {
     try {
         const r = await fetch(API_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
         if (!r.ok) throw new Error('Ошибка загрузки');
         const data = (await r.json()).record;
         if (data && typeof data === 'object') {
-            saveLocalDB(data); // обновляем локальную копию
+            saveLocalDB(data);
             return data;
         }
-    } catch(e) { console.warn('Не удалось загрузить с сервера, использую локальную копию'); }
+    } catch(e) { console.warn('Загрузка с сервера не удалась, использую локальную копию'); }
     return localDB();
 }
 
-// Сохранение с подтверждением и локальным бэкапом
 async function saveDB(data) {
     if (!data || !data.users) return;
-    saveLocalDB(data); // сначала локально
+    saveLocalDB(data);
     try {
         const r = await fetch(API_URL, {
             method: 'PUT',
@@ -289,17 +278,19 @@ async function saveDB(data) {
         });
         if (!r.ok) throw new Error('Ошибка сохранения');
     } catch(e) {
-        console.warn('Не удалось сохранить на сервер, данные остались в локальном хранилище');
+        console.warn('Сохранение на сервер не удалось, данные остались локально');
     }
 }
 
-// Блокировка кнопки с индикацией
-function setLoading(btn, isLoading) {
-    btn.disabled = isLoading;
-    btn.innerHTML = isLoading ? '<span class="spinner"></span> Подождите...' : btn.getAttribute('data-text');
+function setLoading(btn, loading) {
+    btn.disabled = loading;
+    btn.innerHTML = loading ? '<span class="spinner"></span> Подождите...' : btn.getAttribute('data-text');
 }
 
-// === АВТОРИЗАЦИЯ ===
+// Инициализация data-text
+document.querySelectorAll('button[type="submit"]').forEach(b => b.setAttribute('data-text', b.textContent));
+$('sendBtn')?.setAttribute('data-text', '➤');
+
 $('tabLogin').onclick = () => showAuthTab('login');
 $('tabReg').onclick = () => showAuthTab('reg');
 function showAuthTab(tab) {
@@ -326,12 +317,10 @@ $('forgotPassBtn').onclick = () => {
 };
 $('backToLogin').onclick = () => { showAuthTab('login'); $('resetSuccess').textContent = ''; $('resetError').textContent = ''; };
 
-// Сброс пароля
 $('resetForm').onsubmit = async (e) => {
     e.preventDefault();
     $('resetError').textContent = ''; $('resetSuccess').textContent = '';
-    const btn = $('resetBtn');
-    setLoading(btn, true);
+    const btn = $('resetBtn'); setLoading(btn, true);
     const nick = norm($('resetNick').value);
     const email = $('resetEmail').value.trim().toLowerCase();
     const newPass = $('resetNewPass').value;
@@ -346,12 +335,10 @@ $('resetForm').onsubmit = async (e) => {
     setTimeout(() => $('backToLogin').click(), 1200);
 };
 
-// Регистрация
 $('regForm').onsubmit = async (e) => {
     e.preventDefault();
     $('regError').textContent = '';
-    const btn = $('regBtn');
-    setLoading(btn, true);
+    const btn = $('regBtn'); setLoading(btn, true);
     const nick = norm($('regNick').value);
     const email = $('regEmail').value.trim().toLowerCase();
     const pass = $('regPass').value, pass2 = $('regPass2').value;
@@ -369,12 +356,10 @@ $('regForm').onsubmit = async (e) => {
     showApp();
 };
 
-// Вход
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     $('loginError').textContent = '';
-    const btn = $('loginBtn');
-    setLoading(btn, true);
+    const btn = $('loginBtn'); setLoading(btn, true);
     const nick = norm($('loginNick').value);
     const email = $('loginEmail').value.trim().toLowerCase();
     const pass = $('loginPass').value;
@@ -386,9 +371,6 @@ $('loginForm').onsubmit = async (e) => {
     setLoading(btn, false);
     showApp();
 };
-
-// Инициализация кнопок с исходным текстом
-document.querySelectorAll('button[type="submit"]').forEach(b => b.setAttribute('data-text', b.textContent));
 
 function showApp() {
     $('authScreen').classList.add('hidden');
@@ -493,31 +475,52 @@ async function renderMessages(db) {
 
 async function sendMessage(text = '', file = null, fileType = '') {
     if (!activeChat) return;
-    const db = await loadDB();
-    const id = [me.nick, activeChat].sort().join('_');
-    if (!db.messages) db.messages = {};
-    if (!db.messages[id]) db.messages[id] = [];
-    const key = getEncryptionKey(me.nick, activeChat);
-    const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
-    db.messages[id].push({ from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text });
-    await saveDB(db);
-    pendingFile = null;
-    $('previewBar').classList.add('hidden');
-    $('previewBar').innerHTML = '';
-    refresh();
+    const btn = $('sendBtn');
+    setLoading(btn, true);
+    try {
+        const db = await loadDB();
+        const id = [me.nick, activeChat].sort().join('_');
+        if (!db.messages) db.messages = {};
+        if (!db.messages[id]) db.messages[id] = [];
+        const key = getEncryptionKey(me.nick, activeChat);
+        const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
+        db.messages[id].push({ from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text });
+        
+        // Проверка размера JSON
+        const newDB = JSON.stringify(db);
+        if (newDB.length > MAX_JSON_SIZE) {
+            alert('Файл слишком большой для отправки. Пожалуйста, уменьшите размер файла (макс. ~500 КБ).');
+            setLoading(btn, false);
+            return;
+        }
+        await saveDB(db);
+        pendingFile = null;
+        $('previewBar').classList.add('hidden');
+        $('previewBar').innerHTML = '';
+        refresh();
+    } catch(e) {
+        alert('Ошибка отправки: ' + e.message);
+    } finally {
+        setLoading(btn, false);
+    }
 }
 
 $('sendBtn').onclick = () => {
     const text = $('messageInput').value.trim();
-    if (pendingFile) { sendMessage(text, pendingFile.data, pendingFile.type); $('messageInput').value = ''; }
-    else if (text) { sendMessage(text); $('messageInput').value = ''; }
+    if (pendingFile) {
+        sendMessage(text, pendingFile.data, pendingFile.type);
+        $('messageInput').value = '';
+    } else if (text) {
+        sendMessage(text);
+        $('messageInput').value = '';
+    }
 };
 $('messageInput').onkeydown = e => { if (e.key === 'Enter') $('sendBtn').click(); };
 
 function handleFileSelect() {
     const file = $('fileInput').files[0];
     if (!file) return;
-    if (file.size > 5*1024*1024) { alert('Файл слишком большой (макс 5MB)'); $('fileInput').value = ''; return; }
+    if (file.size > 1024 * 1024) { alert('Файл слишком большой (макс. 1 МБ)'); $('fileInput').value = ''; return; }
     const reader = new FileReader();
     reader.onload = () => {
         const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'file';
@@ -545,6 +548,7 @@ async function toggleVoice() {
         mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
         mediaRecorder.onstop = () => {
             const blob = new Blob(audioChunks, { type: 'audio/webm' });
+            if (blob.size > 500000) { alert('Голосовое сообщение слишком длинное (макс. ~30 сек)'); stream.getTracks().forEach(t => t.stop()); return; }
             const reader = new FileReader();
             reader.onload = () => {
                 pendingFile = { data: reader.result, type: 'audio', name: 'Голосовое' };
@@ -558,13 +562,14 @@ async function toggleVoice() {
         };
         mediaRecorder.start();
         $('voiceBtn').textContent = '⏹'; $('voiceBtn').style.background = 'var(--red)'; $('voiceBtn').style.color = '#fff';
-        setTimeout(() => { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }, 15000);
+        setTimeout(() => { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }, 30000);
     } catch { alert('Нет доступа к микрофону. Разрешите в настройках браузера.'); }
 }
 
 function updateAvatar() {
     const file = $('avatarFileInput').files[0];
     if (!file) return;
+    if (file.size > 200000) { alert('Аватар слишком большой (макс. 200 КБ)'); return; }
     const reader = new FileReader();
     reader.onload = () => { me.avatar = reader.result; updateUI(); };
     reader.readAsDataURL(file);
@@ -579,7 +584,6 @@ async function searchUsers() {
     sug.innerHTML = matches.length ? matches.map(u => `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}</div>`).join('') : '<div class="suggestion-item" style="color:var(--text3)">Никого не найдено</div>';
     sug.style.display = 'block';
 }
-
 function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestions').style.display = 'none'; }
 
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
