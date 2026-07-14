@@ -26,13 +26,15 @@
         input, textarea { padding: 10px 12px; background: var(--input); border: 2px solid var(--border); border-radius: 10px; color: var(--text); outline: none; font-size: 14px; font-family: inherit; width: 100%; }
         input:focus, textarea:focus { border-color: var(--accent); }
         button { padding: 10px 16px; background: var(--accent); color: #fff; border: none; border-radius: 20px; cursor: pointer; font-weight: 600; font-size: 14px; transition: 0.2s; }
-        button:active { transform: scale(0.96); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
         .link { color: var(--accent); cursor: pointer; font-size: 12px; text-decoration: underline; background: none; border: none; padding: 4px; }
         .error { color: var(--red); font-size: 11px; min-height: 14px; }
         .success { color: var(--green); font-size: 11px; }
         .suggestions { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; max-height: 150px; overflow-y: auto; width: 100%; z-index: 10; display: none; margin-top: 2px; }
         .suggestion-item { padding: 8px 12px; cursor: pointer; font-size: 13px; text-align: left; }
         .suggestion-item:hover { background: rgba(139,92,246,0.2); }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         
         #appScreen { display: flex; width: 100vw; height: 100dvh; }
         #appScreen.hidden { display: none; }
@@ -237,42 +239,69 @@ const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 
 let me = null, activeChat = null, refreshTimer = null;
 let mediaRecorder = null, audioChunks = [], stream = null;
-let pendingFile = null, encryptionEnabled = true, lastMessageCount = 0;
+let pendingFile = null, encryptionEnabled = true;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
+
+// Резервное локальное хранилище
+function localDB() {
+    try { return JSON.parse(localStorage.getItem('trust_local_backup') || '{"users":[],"messages":{}}'); }
+    catch { return { users: [], messages: {} }; }
+}
+function saveLocalDB(db) { localStorage.setItem('trust_local_backup', JSON.stringify(db)); }
 
 function encrypt(text, key) {
     if (!text) return '';
-    return btoa(text.split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''));
+    return btoa(text.split('').map((c,i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''));
 }
-
 function decrypt(encoded, key) {
     if (!encoded) return '';
-    try { return atob(encoded).split('').map((c, i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''); }
+    try { return atob(encoded).split('').map((c,i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''); }
     catch { return encoded; }
 }
-
 function getEncryptionKey(from, to) {
     return [from.toLowerCase(), to.toLowerCase()].sort().join('_') + '_key';
 }
+function norm(nick) { return (nick || '').toLowerCase().trim(); }
 
+// Улучшенная загрузка с JSONBin с защитой от потери данных
 async function loadDB() {
     try {
         const r = await fetch(API_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
-        if (!r.ok) throw new Error('Ошибка');
-        return (await r.json()).record;
-    } catch { return { users: [], messages: {} }; }
+        if (!r.ok) throw new Error('Ошибка загрузки');
+        const data = (await r.json()).record;
+        if (data && typeof data === 'object') {
+            saveLocalDB(data); // обновляем локальную копию
+            return data;
+        }
+    } catch(e) { console.warn('Не удалось загрузить с сервера, использую локальную копию'); }
+    return localDB();
 }
 
+// Сохранение с подтверждением и локальным бэкапом
 async function saveDB(data) {
-    await fetch(API_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY }, body: JSON.stringify(data) });
+    if (!data || !data.users) return;
+    saveLocalDB(data); // сначала локально
+    try {
+        const r = await fetch(API_URL, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
+            body: JSON.stringify(data)
+        });
+        if (!r.ok) throw new Error('Ошибка сохранения');
+    } catch(e) {
+        console.warn('Не удалось сохранить на сервер, данные остались в локальном хранилище');
+    }
 }
 
-function norm(nick) { return (nick || '').toLowerCase().trim(); }
+// Блокировка кнопки с индикацией
+function setLoading(btn, isLoading) {
+    btn.disabled = isLoading;
+    btn.innerHTML = isLoading ? '<span class="spinner"></span> Подождите...' : btn.getAttribute('data-text');
+}
 
-// Переключение вкладок
+// === АВТОРИЗАЦИЯ ===
 $('tabLogin').onclick = () => showAuthTab('login');
 $('tabReg').onclick = () => showAuthTab('reg');
-
 function showAuthTab(tab) {
     $('tabLogin').classList.toggle('active', tab === 'login');
     $('tabReg').classList.toggle('active', tab === 'reg');
@@ -295,52 +324,48 @@ $('forgotPassBtn').onclick = () => {
     $('tabLogin').classList.remove('active');
     $('tabReg').classList.remove('active');
 };
-
 $('backToLogin').onclick = () => { showAuthTab('login'); $('resetSuccess').textContent = ''; $('resetError').textContent = ''; };
 
 // Сброс пароля
 $('resetForm').onsubmit = async (e) => {
     e.preventDefault();
-    $('resetError').textContent = '';
-    $('resetSuccess').textContent = '';
-    
+    $('resetError').textContent = ''; $('resetSuccess').textContent = '';
+    const btn = $('resetBtn');
+    setLoading(btn, true);
     const nick = norm($('resetNick').value);
     const email = $('resetEmail').value.trim().toLowerCase();
     const newPass = $('resetNewPass').value;
-    
-    if (newPass.length < 8) return $('resetError').textContent = 'Пароль от 8 символов';
-    
+    if (newPass.length < 8) { $('resetError').textContent = 'Пароль от 8 символов'; setLoading(btn, false); return; }
     const db = await loadDB();
     const idx = db.users.findIndex(u => norm(u.nick) === nick && u.email.toLowerCase() === email);
-    if (idx === -1) return $('resetError').textContent = 'Пользователь не найден';
-    
+    if (idx === -1) { $('resetError').textContent = 'Пользователь не найден'; setLoading(btn, false); return; }
     db.users[idx].pass = newPass;
     await saveDB(db);
     $('resetSuccess').textContent = 'Пароль изменён!';
-    setTimeout(() => $('backToLogin').click(), 1000);
+    setLoading(btn, false);
+    setTimeout(() => $('backToLogin').click(), 1200);
 };
 
 // Регистрация
 $('regForm').onsubmit = async (e) => {
     e.preventDefault();
     $('regError').textContent = '';
-    
+    const btn = $('regBtn');
+    setLoading(btn, true);
     const nick = norm($('regNick').value);
     const email = $('regEmail').value.trim().toLowerCase();
     const pass = $('regPass').value, pass2 = $('regPass2').value;
-    
-    if (pass !== pass2) return $('regError').textContent = 'Пароли не совпадают';
-    if (nick.length < 3) return $('regError').textContent = 'Никнейм от 3 символов';
-    if (pass.length < 8) return $('regError').textContent = 'Пароль от 8 символов';
-    
+    if (pass !== pass2) { $('regError').textContent = 'Пароли не совпадают'; setLoading(btn, false); return; }
+    if (nick.length < 3) { $('regError').textContent = 'Никнейм от 3 символов'; setLoading(btn, false); return; }
+    if (pass.length < 8) { $('regError').textContent = 'Пароль от 8 символов'; setLoading(btn, false); return; }
     const db = await loadDB();
-    if (db.users.find(u => norm(u.nick) === nick)) return $('regError').textContent = 'Никнейм занят';
-    
+    if (db.users.find(u => norm(u.nick) === nick)) { $('regError').textContent = 'Никнейм занят'; setLoading(btn, false); return; }
     const newUser = { nick, email, pass, avatar: '', avatarColor: themeColors[0], status: 'В сети', bio: '', friends: [] };
     db.users.push(newUser);
     await saveDB(db);
     me = newUser;
     localStorage.setItem('trust_session', JSON.stringify({ nick, email }));
+    setLoading(btn, false);
     showApp();
 };
 
@@ -348,19 +373,22 @@ $('regForm').onsubmit = async (e) => {
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     $('loginError').textContent = '';
-    
+    const btn = $('loginBtn');
+    setLoading(btn, true);
     const nick = norm($('loginNick').value);
     const email = $('loginEmail').value.trim().toLowerCase();
     const pass = $('loginPass').value;
-    
     const db = await loadDB();
     const u = db.users.find(u => norm(u.nick) === nick && u.email.toLowerCase() === email && u.pass === pass);
-    if (!u) return $('loginError').textContent = 'Неверные данные';
-    
+    if (!u) { $('loginError').textContent = 'Неверные данные'; setLoading(btn, false); return; }
     me = u;
     localStorage.setItem('trust_session', JSON.stringify({ nick: u.nick, email: u.email }));
+    setLoading(btn, false);
     showApp();
 };
+
+// Инициализация кнопок с исходным текстом
+document.querySelectorAll('button[type="submit"]').forEach(b => b.setAttribute('data-text', b.textContent));
 
 function showApp() {
     $('authScreen').classList.add('hidden');
@@ -423,7 +451,6 @@ async function refresh() {
 
 function openChat(p) {
     activeChat = p;
-    lastMessageCount = 0;
     $('emptyChat').classList.add('hidden'); $('chatHead').classList.remove('hidden');
     $('messagesContainer').classList.remove('hidden'); $('inputArea').classList.remove('hidden');
     $('partnerName').textContent = p;
@@ -448,7 +475,6 @@ async function renderMessages(db) {
     const id = [me.nick, activeChat].sort().join('_');
     const msgs = (db.messages || {})[id] || [];
     const key = getEncryptionKey(me.nick, activeChat);
-    
     $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
         let text = m.text || '';
         if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не удалось расшифровать]';
@@ -462,10 +488,7 @@ async function renderMessages(db) {
         if (text) content += `<div>${text}</div>`;
         return `<div class="msg ${m.from===me.nick?'own':'other'}">${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
     }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">💜 Начните переписку!</div>';
-    
-    const container = $('messagesContainer');
-    container.scrollTop = container.scrollHeight;
-    lastMessageCount = msgs.length;
+    $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
 }
 
 async function sendMessage(text = '', file = null, fileType = '') {
@@ -474,10 +497,8 @@ async function sendMessage(text = '', file = null, fileType = '') {
     const id = [me.nick, activeChat].sort().join('_');
     if (!db.messages) db.messages = {};
     if (!db.messages[id]) db.messages[id] = [];
-    
     const key = getEncryptionKey(me.nick, activeChat);
     const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
-    
     db.messages[id].push({ from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text });
     await saveDB(db);
     pendingFile = null;
@@ -491,25 +512,21 @@ $('sendBtn').onclick = () => {
     if (pendingFile) { sendMessage(text, pendingFile.data, pendingFile.type); $('messageInput').value = ''; }
     else if (text) { sendMessage(text); $('messageInput').value = ''; }
 };
-
 $('messageInput').onkeydown = e => { if (e.key === 'Enter') $('sendBtn').click(); };
 
 function handleFileSelect() {
     const file = $('fileInput').files[0];
     if (!file) return;
     if (file.size > 5*1024*1024) { alert('Файл слишком большой (макс 5MB)'); $('fileInput').value = ''; return; }
-    
     const reader = new FileReader();
     reader.onload = () => {
         const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'file';
         pendingFile = { data: reader.result, type, name: file.name };
-        
         let preview = '';
         if (type === 'image') preview = `<img src="${reader.result}">`;
         else if (type === 'video') preview = `<video src="${reader.result}" controls style="width:60px;height:40px;"></video>`;
         else if (type === 'audio') preview = `🎵 ${file.name}`;
         else preview = `📎 ${file.name}`;
-        
         $('previewBar').innerHTML = `${preview} <span style="flex:1;font-size:11px;color:var(--text2)">Готово</span> <button onclick="cancelFile()">✕</button>`;
         $('previewBar').classList.remove('hidden');
     };
@@ -589,7 +606,12 @@ $('btnSaveSettings').onclick = async () => {
 $('btnLogout').onclick = () => { if (stream) stream.getTracks().forEach(t => t.stop()); localStorage.removeItem('trust_session'); location.reload(); };
 function showDonate() { $('donateModal').classList.remove('hidden'); }
 
-$('btnAddFriend').onclick = () => { $('addFriendModal').classList.remove('hidden'); $('friendNickInput').value = ''; $('addFriendError').textContent = ''; $('addFriendSuccess').textContent = ''; $('userSuggestions').style.display = 'none'; };
+$('btnAddFriend').onclick = () => { 
+    $('addFriendModal').classList.remove('hidden'); 
+    $('friendNickInput').value = ''; 
+    $('addFriendError').textContent = ''; $('addFriendSuccess').textContent = '';
+    $('userSuggestions').style.display = 'none';
+};
 $('btnCancelAddFriend').onclick = () => $('addFriendModal').classList.add('hidden');
 $('btnConfirmAddFriend').onclick = async () => {
     const nick = $('friendNickInput').value.trim();
