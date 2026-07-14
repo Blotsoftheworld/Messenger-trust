@@ -223,23 +223,26 @@
 </div>
 
 <script>
-const $ = id => document.getElementById(id);
+// === НАСТРОЙКИ ===
 const API_KEY = '$2a$10$KiP/8lAd8kH3cgOTTCiUpOAR.vGUj7Nz23lSGU4Z2udjUG8GycMmG';
 const BIN_ID = '6a550b47da38895dfe57a6ca';
 const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+const MAX_JSON_SIZE = 450000; // Лимит JSONBin (чуть меньше 500 КБ)
 
+const $ = id => document.getElementById(id);
 let me = null, activeChat = null, refreshTimer = null;
 let mediaRecorder = null, audioChunks = [], stream = null;
 let pendingFile = null, encryptionEnabled = true;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
-const MAX_JSON_SIZE = 750000; // безопасный размер для JSONBin
 
+// === ЛОКАЛЬНЫЙ РЕЗЕРВ ===
 function localDB() {
-    try { return JSON.parse(localStorage.getItem('trust_local_backup') || '{"users":[],"messages":{}}'); }
+    try { return JSON.parse(localStorage.getItem('trust_backup') || '{"users":[],"messages":{}}'); }
     catch { return { users: [], messages: {} }; }
 }
-function saveLocalDB(db) { localStorage.setItem('trust_local_backup', JSON.stringify(db)); }
+function saveLocalDB(db) { localStorage.setItem('trust_backup', JSON.stringify(db)); }
 
+// === ШИФРОВАНИЕ ===
 function encrypt(text, key) {
     if (!text) return '';
     return btoa(text.split('').map((c,i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''));
@@ -254,6 +257,7 @@ function getEncryptionKey(from, to) {
 }
 function norm(nick) { return (nick || '').toLowerCase().trim(); }
 
+// === РАБОТА С JSONBIN ===
 async function loadDB() {
     try {
         const r = await fetch(API_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
@@ -282,13 +286,21 @@ async function saveDB(data) {
     }
 }
 
-function setLoading(btn, loading) {
-    btn.disabled = loading;
-    btn.innerHTML = loading ? '<span class="spinner"></span> Подождите...' : btn.getAttribute('data-text');
+// Автоочистка старых сообщений, если JSON слишком большой
+function trimOldMessages(db) {
+    let total = JSON.stringify(db).length;
+    if (total <= MAX_JSON_SIZE) return db;
+    // Удаляем самые старые сообщения из всех чатов
+    for (let chatId in db.messages) {
+        while (db.messages[chatId].length > 0 && JSON.stringify(db).length > MAX_JSON_SIZE) {
+            db.messages[chatId].shift(); // удаляем первое (самое старое)
+        }
+    }
+    return db;
 }
 
-// Сжатие изображения
-function compressImage(base64, maxWidth = 500, maxSizeKB = 100) {
+// === СЖАТИЕ ИЗОБРАЖЕНИЙ ===
+function compressImage(base64, maxWidth = 400, maxSizeKB = 35) {
     return new Promise((resolve) => {
         const img = new Image();
         img.onload = () => {
@@ -302,7 +314,7 @@ function compressImage(base64, maxWidth = 500, maxSizeKB = 100) {
             canvas.height = height;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0, width, height);
-            let quality = 0.7;
+            let quality = 0.6;
             let result = canvas.toDataURL('image/jpeg', quality);
             while (result.length > maxSizeKB * 1024 && quality > 0.2) {
                 quality -= 0.1;
@@ -314,9 +326,17 @@ function compressImage(base64, maxWidth = 500, maxSizeKB = 100) {
     });
 }
 
+// === ИНДИКАЦИЯ ЗАГРУЗКИ ===
+function setLoading(btn, loading) {
+    btn.disabled = loading;
+    btn.innerHTML = loading ? '<span class="spinner"></span> Подождите...' : btn.getAttribute('data-text');
+}
+
+// Инициализация data-text у кнопок
 document.querySelectorAll('button[type="submit"]').forEach(b => b.setAttribute('data-text', b.textContent));
 $('sendBtn')?.setAttribute('data-text', '➤');
 
+// === АВТОРИЗАЦИЯ ===
 $('tabLogin').onclick = () => showAuthTab('login');
 $('tabReg').onclick = () => showAuthTab('reg');
 function showAuthTab(tab) {
@@ -331,24 +351,17 @@ function showAuthTab(tab) {
 }
 
 $('forgotPassBtn').onclick = () => {
-    $('tabLogin').style.display = 'none';
-    $('tabReg').style.display = 'none';
-    $('tabReset').style.display = 'block';
-    $('tabReset').classList.add('active');
-    $('loginForm').classList.remove('active');
-    $('regForm').classList.remove('active');
+    $('tabLogin').style.display = 'none'; $('tabReg').style.display = 'none';
+    $('tabReset').style.display = 'block'; $('tabReset').classList.add('active');
+    $('loginForm').classList.remove('active'); $('regForm').classList.remove('active');
     $('resetForm').classList.add('active');
-    $('tabLogin').classList.remove('active');
-    $('tabReg').classList.remove('active');
 };
-$('backToLogin').onclick = () => { showAuthTab('login'); $('resetSuccess').textContent = ''; $('resetError').textContent = ''; };
+$('backToLogin').onclick = () => { showAuthTab('login'); $('resetSuccess').textContent = ''; };
 
 $('resetForm').onsubmit = async (e) => {
     e.preventDefault();
-    $('resetError').textContent = ''; $('resetSuccess').textContent = '';
     const btn = $('resetBtn'); setLoading(btn, true);
-    const nick = norm($('resetNick').value);
-    const email = $('resetEmail').value.trim().toLowerCase();
+    const nick = norm($('resetNick').value), email = $('resetEmail').value.trim().toLowerCase();
     const newPass = $('resetNewPass').value;
     if (newPass.length < 8) { $('resetError').textContent = 'Пароль от 8 символов'; setLoading(btn, false); return; }
     const db = await loadDB();
@@ -363,10 +376,8 @@ $('resetForm').onsubmit = async (e) => {
 
 $('regForm').onsubmit = async (e) => {
     e.preventDefault();
-    $('regError').textContent = '';
     const btn = $('regBtn'); setLoading(btn, true);
-    const nick = norm($('regNick').value);
-    const email = $('regEmail').value.trim().toLowerCase();
+    const nick = norm($('regNick').value), email = $('regEmail').value.trim().toLowerCase();
     const pass = $('regPass').value, pass2 = $('regPass2').value;
     if (pass !== pass2) { $('regError').textContent = 'Пароли не совпадают'; setLoading(btn, false); return; }
     if (nick.length < 3) { $('regError').textContent = 'Никнейм от 3 символов'; setLoading(btn, false); return; }
@@ -384,10 +395,8 @@ $('regForm').onsubmit = async (e) => {
 
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
-    $('loginError').textContent = '';
     const btn = $('loginBtn'); setLoading(btn, true);
-    const nick = norm($('loginNick').value);
-    const email = $('loginEmail').value.trim().toLowerCase();
+    const nick = norm($('loginNick').value), email = $('loginEmail').value.trim().toLowerCase();
     const pass = $('loginPass').value;
     const db = await loadDB();
     const u = db.users.find(u => norm(u.nick) === nick && u.email.toLowerCase() === email && u.pass === pass);
@@ -418,14 +427,10 @@ function updateUI() {
         if (me.avatar) { el.style.backgroundImage = `url(${me.avatar})`; el.style.backgroundColor = 'transparent'; el.textContent = ''; }
         else { el.style.backgroundImage = 'none'; el.style.backgroundColor = me.avatarColor || themeColors[0]; el.textContent = me.nick[0].toUpperCase(); }
     });
-    $('myName').textContent = me.nick;
-    $('myStatus').textContent = me.status;
-    $('settingsNick').value = me.nick;
-    $('settingsStatus').value = me.status;
-    $('settingsBio').value = me.bio || '';
-    $('settingsEmail').value = me.email || '';
-    $('settingsPass').value = '';
-    $('encryptionToggle').checked = encryptionEnabled;
+    $('myName').textContent = me.nick; $('myStatus').textContent = me.status;
+    $('settingsNick').value = me.nick; $('settingsStatus').value = me.status;
+    $('settingsBio').value = me.bio || ''; $('settingsEmail').value = me.email || '';
+    $('settingsPass').value = ''; $('encryptionToggle').checked = encryptionEnabled;
     $('themeColors').innerHTML = themeColors.map(c => `<div class="color-dot ${c === (me.avatarColor || themeColors[0]) ? 'selected' : ''}" style="background:${c}" data-color="${c}"></div>`).join('');
     document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.avatarColor = d.dataset.color; applyTheme(me.avatarColor); updateUI(); });
 }
@@ -461,10 +466,8 @@ function openChat(p) {
     activeChat = p;
     $('emptyChat').classList.add('hidden'); $('chatHead').classList.remove('hidden');
     $('messagesContainer').classList.remove('hidden'); $('inputArea').classList.remove('hidden');
-    $('partnerName').textContent = p;
-    $('partnerAvatar').textContent = p[0].toUpperCase();
-    $('partnerAvatar').style.backgroundImage = 'none';
-    $('partnerAvatar').style.backgroundColor = 'var(--accent)';
+    $('partnerName').textContent = p; $('partnerAvatar').textContent = p[0].toUpperCase();
+    $('partnerAvatar').style.backgroundImage = 'none'; $('partnerAvatar').style.backgroundColor = 'var(--accent)';
     if (window.innerWidth <= 768) $('sidebar').classList.add('mobile-hidden');
     refresh();
 }
@@ -472,10 +475,8 @@ function openChat(p) {
 function closeChat() {
     activeChat = null;
     $('sidebar').classList.remove('mobile-hidden');
-    $('emptyChat').classList.remove('hidden');
-    $('chatHead').classList.add('hidden');
-    $('messagesContainer').classList.add('hidden');
-    $('inputArea').classList.add('hidden');
+    $('emptyChat').classList.remove('hidden'); $('chatHead').classList.add('hidden');
+    $('messagesContainer').classList.add('hidden'); $('inputArea').classList.add('hidden');
     $('previewBar').classList.add('hidden');
 }
 
@@ -485,12 +486,12 @@ async function renderMessages(db) {
     const key = getEncryptionKey(me.nick, activeChat);
     $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
         let text = m.text || '';
-        if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не удалось расшифровать]';
+        if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не расшифровано]';
         let content = '';
         if (m.file) {
-            if (m.fileType === 'image') content += `<img src="${m.file}" alt="Фото" loading="lazy" onclick="window.open('${m.file}')">`;
-            else if (m.fileType === 'video') content += `<video src="${m.file}" controls preload="metadata" style="max-width:200px;"></video>`;
-            else if (m.fileType === 'audio') content += `<audio src="${m.file}" controls preload="metadata"></audio>`;
+            if (m.fileType === 'image') content += `<img src="${m.file}" alt="Фото" loading="lazy">`;
+            else if (m.fileType === 'video') content += `<video src="${m.file}" controls></video>`;
+            else if (m.fileType === 'audio') content += `<audio src="${m.file}" controls></audio>`;
             else content += `<a href="${m.file}" target="_blank">📎 Файл</a>`;
         }
         if (text) content += `<div>${text}</div>`;
@@ -499,10 +500,10 @@ async function renderMessages(db) {
     $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
 }
 
-async function sendMessage(text = '', file = null, fileType = '', retry = 0) {
+// ОТПРАВКА С ОЧИСТКОЙ
+async function sendMessage(text = '', file = null, fileType = '') {
     if (!activeChat) return;
-    const btn = $('sendBtn');
-    setLoading(btn, true);
+    const btn = $('sendBtn'); setLoading(btn, true);
     try {
         const db = await loadDB();
         const id = [me.nick, activeChat].sort().join('_');
@@ -511,22 +512,10 @@ async function sendMessage(text = '', file = null, fileType = '', retry = 0) {
         const key = getEncryptionKey(me.nick, activeChat);
         const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
         db.messages[id].push({ from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text });
-        
-        const jsonStr = JSON.stringify(db);
-        if (jsonStr.length > MAX_JSON_SIZE) {
-            if (file && retry < 1) {
-                if (fileType === 'image') {
-                    const compressed = await compressImage(file, 400, 70);
-                    pendingFile = { data: compressed, type: fileType, name: pendingFile.name };
-                    setLoading(btn, false);
-                    return sendMessage(text, compressed, fileType, retry + 1);
-                }
-            }
-            alert('Сообщение слишком большое. Уменьшите размер файла.');
-            setLoading(btn, false);
-            return;
-        }
-        await saveDB(db);
+
+        // Автоочистка, если JSON слишком большой
+        const cleaned = trimOldMessages(db);
+        await saveDB(cleaned);
         pendingFile = null;
         $('previewBar').classList.add('hidden');
         refresh();
@@ -550,21 +539,23 @@ $('sendBtn').onclick = () => {
 };
 $('messageInput').onkeydown = e => { if (e.key === 'Enter') $('sendBtn').click(); };
 
+// Файлы и голосовые
 async function handleFileSelect() {
     const file = $('fileInput').files[0];
     if (!file) return;
-    if (file.size > 1024 * 1024) { alert('Файл слишком большой (макс. 1 МБ)'); $('fileInput').value = ''; return; }
+    if (file.size > 1024 * 1024) { alert('Файл слишком большой (макс. 1 МБ)'); return; }
     const reader = new FileReader();
     reader.onload = async () => {
         let data = reader.result;
         let type = 'file';
         if (file.type.startsWith('image/')) {
             type = 'image';
-            data = await compressImage(data, 500, 90);
+            data = await compressImage(data, 400, 30);
         } else if (file.type.startsWith('video/')) {
-            if (file.size > 400 * 1024) { alert('Видео слишком большое (макс. 400 КБ)'); return; }
+            if (file.size > 250 * 1024) { alert('Видео слишком большое (макс. 250 КБ)'); return; }
             type = 'video';
         } else if (file.type.startsWith('audio/')) {
+            if (file.size > 150 * 1024) { alert('Аудио слишком большое (макс. 150 КБ)'); return; }
             type = 'audio';
         }
         pendingFile = { data, type, name: file.name };
@@ -584,19 +575,18 @@ function showPreview(data, type) {
     $('previewBar').classList.remove('hidden');
 }
 
-function cancelFile() { pendingFile = null; $('previewBar').classList.add('hidden'); $('previewBar').innerHTML = ''; }
+function cancelFile() { pendingFile = null; $('previewBar').classList.add('hidden'); }
 
 async function toggleVoice() {
     if (mediaRecorder?.state === 'recording') { mediaRecorder.stop(); return; }
     try {
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        const options = { audioBitsPerSecond: 8000 };
-        mediaRecorder = new MediaRecorder(stream, options);
+        mediaRecorder = new MediaRecorder(stream, { audioBitsPerSecond: 8000 });
         audioChunks = [];
         mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
         mediaRecorder.onstop = () => {
             const blob = new Blob(audioChunks, { type: 'audio/webm' });
-            if (blob.size > 250 * 1024) { alert('Голосовое слишком длинное'); stream.getTracks().forEach(t => t.stop()); return; }
+            if (blob.size > 120 * 1024) { alert('Слишком длинное'); return; }
             const reader = new FileReader();
             reader.onload = () => {
                 pendingFile = { data: reader.result, type: 'audio', name: 'Голосовое' };
@@ -609,25 +599,25 @@ async function toggleVoice() {
         };
         mediaRecorder.start();
         $('voiceBtn').textContent = '⏹'; $('voiceBtn').style.background = 'var(--red)'; $('voiceBtn').style.color = '#fff';
-        setTimeout(() => { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }, 10000);
+        setTimeout(() => { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }, 8000);
     } catch { alert('Нет доступа к микрофону.'); }
 }
 
 function updateAvatar() {
     const file = $('avatarFileInput').files[0];
     if (!file) return;
-    if (file.size > 150 * 1024) { alert('Аватар слишком большой (макс. 150 КБ)'); return; }
+    if (file.size > 100 * 1024) { alert('Аватар слишком большой (макс. 100 КБ)'); return; }
     const reader = new FileReader();
     reader.onload = () => { me.avatar = reader.result; updateUI(); };
     reader.readAsDataURL(file);
 }
 
 async function searchUsers() {
-    const query = norm($('friendNickInput').value);
+    const q = norm($('friendNickInput').value);
     const sug = $('userSuggestions');
-    if (query.length < 1) { sug.style.display = 'none'; return; }
+    if (q.length < 1) { sug.style.display = 'none'; return; }
     const db = await loadDB();
-    const matches = db.users.filter(u => norm(u.nick).includes(query) && norm(u.nick) !== norm(me.nick)).slice(0, 5);
+    const matches = db.users.filter(u => norm(u.nick).includes(q) && norm(u.nick) !== norm(me.nick)).slice(0, 5);
     sug.innerHTML = matches.length ? matches.map(u => `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}</div>`).join('') : '<div class="suggestion-item" style="color:var(--text3)">Никого не найдено</div>';
     sug.style.display = 'block';
 }
@@ -649,9 +639,7 @@ $('btnSaveSettings').onclick = async () => {
     await saveDB(db);
     me = db.users[idx];
     localStorage.setItem('trust_session', JSON.stringify({ nick: me.nick, email: me.email }));
-    updateUI();
-    closeSettings();
-    refresh();
+    updateUI(); closeSettings(); refresh();
 };
 
 $('btnLogout').onclick = () => { if (stream) stream.getTracks().forEach(t => t.stop()); localStorage.removeItem('trust_session'); location.reload(); };
@@ -659,8 +647,7 @@ function showDonate() { $('donateModal').classList.remove('hidden'); }
 
 $('btnAddFriend').onclick = () => { 
     $('addFriendModal').classList.remove('hidden'); 
-    $('friendNickInput').value = ''; 
-    $('addFriendError').textContent = ''; $('addFriendSuccess').textContent = '';
+    $('friendNickInput').value = ''; $('addFriendError').textContent = ''; $('addFriendSuccess').textContent = '';
     $('userSuggestions').style.display = 'none';
 };
 $('btnCancelAddFriend').onclick = () => $('addFriendModal').classList.add('hidden');
@@ -683,6 +670,7 @@ $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display = 'none'; });
 
+// Автовход
 (async () => {
     const saved = JSON.parse(localStorage.getItem('trust_session') || 'null');
     if (saved) {
