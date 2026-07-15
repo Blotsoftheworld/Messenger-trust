@@ -236,7 +236,6 @@
 </div>
 
 <script>
-// ========== НАСТРОЙКИ И СЕРВЕР ==========
 const $ = id => document.getElementById(id);
 const API_KEY = '$2a$10$KiP/8lAd8kH3cgOTTCiUpOAR.vGUj7Nz23lSGU4Z2udjUG8GycMmG';
 const BIN_ID = '6a550b47da38895dfe57a6ca';
@@ -247,27 +246,20 @@ let mediaRecorder = null, audioChunks = [], stream = null;
 let pendingFile = null, encryptionEnabled = true, lastMsgCount = 0;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
 
-// Шифрование
+// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+function norm(str) { return String(str || '').toLowerCase().trim(); }
 function encrypt(text, key) {
     if (!text) return '';
-    return btoa(unescape(encodeURIComponent(text)).split('').map((c,i) => 
-        String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))
-    ).join(''));
+    return btoa(unescape(encodeURIComponent(text)).split('').map((c,i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''));
 }
 function decrypt(encoded, key) {
     if (!encoded) return '';
-    try {
-        return decodeURIComponent(escape(atob(encoded).split('').map((c,i) => 
-            String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))
-        ).join('')));
-    } catch { return encoded; }
+    try { return decodeURIComponent(escape(atob(encoded).split('').map((c,i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''))); }
+    catch { return encoded; }
 }
-function getEncryptionKey(from, to) {
-    return [from.toLowerCase(), to.toLowerCase()].sort().join('_') + '_secret';
-}
-function norm(nick) { return (nick || '').toLowerCase().trim(); }
+function getKey(a, b) { return [norm(a), norm(b)].sort().join('_') + '_key'; }
 
-// Работа с JSONBin
+// РАБОТА С JSONBIN
 async function loadDB() {
     try {
         const r = await fetch(API_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
@@ -277,7 +269,7 @@ async function loadDB() {
             localStorage.setItem('trust_backup', JSON.stringify(data));
             return data;
         }
-    } catch(e) { console.warn('Загрузка с сервера не удалась'); }
+    } catch(e) { console.warn('Сервер недоступен, беру локальную копию'); }
     try { return JSON.parse(localStorage.getItem('trust_backup') || '{"users":[],"messages":{}}'); }
     catch { return { users: [], messages: {} }; }
 }
@@ -286,12 +278,8 @@ async function saveDB(data) {
     if (!data?.users) return;
     localStorage.setItem('trust_backup', JSON.stringify(data));
     try {
-        await fetch(API_URL, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-            body: JSON.stringify(data)
-        });
-    } catch(e) { console.warn('Сохранение на сервер не удалось'); }
+        await fetch(API_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY }, body: JSON.stringify(data) });
+    } catch(e) { console.warn('Не удалось сохранить на сервер'); }
 }
 
 function setLoading(btn, loading) {
@@ -301,7 +289,7 @@ function setLoading(btn, loading) {
 document.querySelectorAll('button[type="submit"]').forEach(b => b.setAttribute('data-text', b.textContent));
 $('sendBtn')?.setAttribute('data-text', '➤');
 
-// ========== АВТОРИЗАЦИЯ ==========
+// АВТОРИЗАЦИЯ
 $('tabLogin').onclick = () => showAuthTab('login');
 $('tabReg').onclick = () => showAuthTab('reg');
 function showAuthTab(tab) {
@@ -311,44 +299,33 @@ function showAuthTab(tab) {
     $('regForm').classList.toggle('active', tab==='reg');
     $('resetForm').classList.remove('active');
     $('tabReset').style.display = 'none';
-    $('tabLogin').style.display = 'block';
-    $('tabReg').style.display = 'block';
+    $('tabLogin').style.display = 'block'; $('tabReg').style.display = 'block';
 }
 
 $('forgotPassBtn').onclick = () => {
-    $('tabLogin').style.display = 'none'; $('tabReg').style.display = 'none';
-    $('tabReset').style.display = 'block'; $('tabReset').classList.add('active');
+    $('tabLogin').style.display='none'; $('tabReg').style.display='none';
+    $('tabReset').style.display='block'; $('tabReset').classList.add('active');
     $('loginForm').classList.remove('active'); $('regForm').classList.remove('active');
     $('resetForm').classList.add('active');
 };
-$('backToLogin').onclick = () => { showAuthTab('login'); $('resetSuccess').textContent = ''; };
+$('backToLogin').onclick = () => { showAuthTab('login'); $('resetSuccess').textContent=''; };
 
-$('resetForm').onsubmit = async (e) => {
-    e.preventDefault();
-    const btn = $('resetBtn'); setLoading(btn, true);
-    const nick = norm($('resetNick').value), email = $('resetEmail').value.trim().toLowerCase();
-    const newPass = $('resetNewPass').value;
-    if (newPass.length < 8) { $('resetError').textContent = 'Пароль от 8 символов'; setLoading(btn, false); return; }
-    const db = await loadDB();
-    const idx = db.users.findIndex(u => norm(u.nick)===nick && u.email.toLowerCase()===email);
-    if (idx === -1) { $('resetError').textContent = 'Пользователь не найден'; setLoading(btn, false); return; }
-    db.users[idx].pass = newPass;
-    await saveDB(db);
-    $('resetSuccess').textContent = 'Пароль изменён!';
-    setLoading(btn, false);
-    setTimeout(() => $('backToLogin').click(), 1200);
-};
-
+// РЕГИСТРАЦИЯ — ВСЕГДА В НИЖНЕМ РЕГИСТРЕ
 $('regForm').onsubmit = async (e) => {
     e.preventDefault();
     const btn = $('regBtn'); setLoading(btn, true);
-    const nick = norm($('regNick').value), email = $('regEmail').value.trim().toLowerCase();
+    const nick = norm($('regNick').value);
+    const email = norm($('regEmail').value);
     const pass = $('regPass').value, pass2 = $('regPass2').value;
-    if (pass !== pass2) { $('regError').textContent = 'Пароли не совпадают'; setLoading(btn, false); return; }
-    if (nick.length < 3) { $('regError').textContent = 'Никнейм от 3 символов'; setLoading(btn, false); return; }
-    if (pass.length < 8) { $('regError').textContent = 'Пароль от 8 символов'; setLoading(btn, false); return; }
+    
+    if (pass !== pass2) { $('regError').textContent='Пароли не совпадают'; setLoading(btn, false); return; }
+    if (nick.length < 3) { $('regError').textContent='Никнейм от 3 символов'; setLoading(btn, false); return; }
+    if (pass.length < 8) { $('regError').textContent='Пароль от 8 символов'; setLoading(btn, false); return; }
+    
     const db = await loadDB();
-    if (db.users.find(u => norm(u.nick)===nick)) { $('regError').textContent = 'Никнейм занят'; setLoading(btn, false); return; }
+    if (db.users.find(u => norm(u.nick) === nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; }
+    if (db.users.find(u => norm(u.email) === email)) { $('regError').textContent='Email занят'; setLoading(btn, false); return; }
+    
     const newUser = { nick, email, pass, avatar:'', avatarColor:themeColors[0], status:'В сети', bio:'', friends:[] };
     db.users.push(newUser);
     await saveDB(db);
@@ -358,26 +335,65 @@ $('regForm').onsubmit = async (e) => {
     showApp();
 };
 
+// ВХОД — ИСПРАВЛЕН (двойная проверка + повторная загрузка)
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     const btn = $('loginBtn'); setLoading(btn, true);
-    const nick = norm($('loginNick').value), email = $('loginEmail').value.trim().toLowerCase();
+    $('loginError').textContent = '';
+    
+    const nick = norm($('loginNick').value);
+    const email = norm($('loginEmail').value);
     const pass = $('loginPass').value;
-    const db = await loadDB();
-    const u = db.users.find(u => norm(u.nick)===nick && u.email.toLowerCase()===email && u.pass===pass);
-    if (!u) { $('loginError').textContent = 'Неверные данные'; setLoading(btn, false); return; }
-    me = u;
-    localStorage.setItem('trust_session', JSON.stringify({nick: u.nick, email: u.email}));
+    
+    // Первая попытка
+    let db = await loadDB();
+    let user = db.users.find(u => norm(u.nick) === nick && norm(u.email) === email && u.pass === pass);
+    
+    // Если не нашли — пробуем ещё раз через секунду (JSONBin мог не успеть)
+    if (!user) {
+        await new Promise(r => setTimeout(r, 1000));
+        db = await loadDB();
+        user = db.users.find(u => norm(u.nick) === nick && norm(u.email) === email && u.pass === pass);
+    }
+    
+    if (!user) {
+        $('loginError').textContent = 'Неверные данные. Проверьте ник, email и пароль.';
+        setLoading(btn, false);
+        return;
+    }
+    
+    me = user;
+    localStorage.setItem('trust_session', JSON.stringify({nick: user.nick, email: user.email}));
     setLoading(btn, false);
     showApp();
 };
 
+// СБРОС ПАРОЛЯ
+$('resetForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = $('resetBtn'); setLoading(btn, true);
+    const nick = norm($('resetNick').value);
+    const email = norm($('resetEmail').value);
+    const newPass = $('resetNewPass').value;
+    if (newPass.length < 8) { $('resetError').textContent='Пароль от 8 символов'; setLoading(btn, false); return; }
+    const db = await loadDB();
+    const idx = db.users.findIndex(u => norm(u.nick)===nick && norm(u.email)===email);
+    if (idx===-1) { $('resetError').textContent='Пользователь не найден'; setLoading(btn, false); return; }
+    db.users[idx].pass = newPass;
+    await saveDB(db);
+    $('resetSuccess').textContent='Пароль изменён!';
+    setLoading(btn, false);
+    setTimeout(() => $('backToLogin').click(), 1200);
+};
+
+// ПОКАЗАТЬ ПРИЛОЖЕНИЕ
 function showApp() {
     $('authScreen').classList.add('hidden');
     $('appScreen').classList.remove('hidden');
     applyTheme(me.avatarColor || themeColors[0]);
     updateUI();
     refresh();
+    if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = setInterval(refresh, 2500);
 }
 
@@ -400,23 +416,17 @@ function updateUI() {
     $('settingsEmail').value = me.email || '';
     $('settingsPass').value = '';
     $('encryptionToggle').checked = encryptionEnabled;
-    $('themeColors').innerHTML = themeColors.map(c => 
-        `<div class="color-dot ${c===(me.avatarColor||themeColors[0])?'selected':''}" style="background:${c}" data-color="${c}"></div>`
-    ).join('');
-    document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => {
-        me.avatarColor = d.dataset.color;
-        applyTheme(me.avatarColor);
-        updateUI();
-    });
+    $('themeColors').innerHTML = themeColors.map(c => `<div class="color-dot ${c===(me.avatarColor||themeColors[0])?'selected':''}" style="background:${c}" data-color="${c}"></div>`).join('');
+    document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.avatarColor = d.dataset.color; applyTheme(me.avatarColor); updateUI(); });
 }
 
 function toggleEncryption() { encryptionEnabled = $('encryptionToggle').checked; }
 
-// ========== ЧАТЫ И СООБЩЕНИЯ ==========
+// ЧАТЫ И СООБЩЕНИЯ
 async function refresh() {
     if (!me) return;
     const db = await loadDB();
-    me = db.users.find(u => norm(u.nick)===norm(me.nick)) || me;
+    me = db.users.find(u => norm(u.nick) === norm(me.nick)) || me;
     const chats = [], seen = new Set();
     Object.entries(db.messages||{}).forEach(([id, msgs]) => {
         if (id.includes(me.nick) && msgs.length) {
@@ -459,9 +469,8 @@ function closeChat() {
 async function renderMessages(db) {
     const id = [me.nick, activeChat].sort().join('_');
     const msgs = (db.messages||{})[id] || [];
-    const key = getEncryptionKey(me.nick, activeChat);
+    const key = getKey(me.nick, activeChat);
     const wasAtBottom = $('messagesContainer').scrollHeight - $('messagesContainer').scrollTop - $('messagesContainer').clientHeight < 100;
-    
     $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
         let text = m.text || '';
         if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не расшифровано]';
@@ -475,10 +484,7 @@ async function renderMessages(db) {
         if (text) content += `<div>${text}</div>`;
         return `<div class="msg ${m.from===me.nick?'own':'other'}">${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
     }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">💜 Начните переписку!</div>';
-    
-    if (wasAtBottom || msgs.length > lastMsgCount) {
-        $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
-    }
+    if (wasAtBottom || msgs.length > lastMsgCount) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
     lastMsgCount = msgs.length;
 }
 
@@ -490,7 +496,7 @@ async function sendMessage(text='', file=null, fileType='') {
         const id = [me.nick, activeChat].sort().join('_');
         if (!db.messages) db.messages = {};
         if (!db.messages[id]) db.messages[id] = [];
-        const key = getEncryptionKey(me.nick, activeChat);
+        const key = getKey(me.nick, activeChat);
         const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
         db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
         await saveDB(db);
@@ -507,30 +513,29 @@ $('sendBtn').onclick = () => {
 };
 $('messageInput').onkeydown = e => { if (e.key==='Enter') $('sendBtn').click(); };
 
-// Медиа
+// МЕДИА
 async function handleFileSelect() {
     const file = $('fileInput').files[0];
     if (!file) return;
-    if (file.size > 1024*1024) { alert('Макс. 1 МБ'); return; }
+    if (file.size > 500*1024) { alert('Макс. 500 КБ'); return; }
     const reader = new FileReader();
     reader.onload = async () => {
         let data = reader.result, type = 'file';
         if (file.type.startsWith('image/')) {
             type = 'image';
-            const img = new Image();
-            img.src = data;
+            const img = new Image(); img.src = data;
             await new Promise(r => img.onload=r);
             const canvas = document.createElement('canvas');
             let w=img.width, h=img.height;
-            if (w>400) { h = h*400/w; w=400; }
-            canvas.width = w; canvas.height = h;
+            if (w>400) { h=h*400/w; w=400; }
+            canvas.width=w; canvas.height=h;
             canvas.getContext('2d').drawImage(img,0,0,w,h);
-            data = canvas.toDataURL('image/jpeg', 0.5);
+            data = canvas.toDataURL('image/jpeg', 0.4);
         } else if (file.type.startsWith('video/')) {
-            if (file.size > 200*1024) { alert('Видео макс. 200 КБ'); return; }
+            if (file.size > 150*1024) { alert('Видео макс. 150 КБ'); return; }
             type = 'video';
         } else if (file.type.startsWith('audio/')) {
-            if (file.size > 120*1024) { alert('Аудио макс. 120 КБ'); return; }
+            if (file.size > 80*1024) { alert('Аудио макс. 80 КБ'); return; }
             type = 'audio';
         }
         pendingFile = {data, type, name:file.name};
@@ -560,7 +565,7 @@ async function toggleVoice() {
         mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
         mediaRecorder.onstop = () => {
             const blob = new Blob(audioChunks, {type:'audio/webm'});
-            if (blob.size > 100*1024) { alert('Слишком длинное'); return; }
+            if (blob.size > 80*1024) { alert('Слишком длинное'); return; }
             const reader = new FileReader();
             reader.onload = () => {
                 pendingFile = {data:reader.result, type:'audio', name:'Голосовое'};
@@ -580,13 +585,13 @@ async function toggleVoice() {
 function updateAvatar() {
     const file = $('avatarFileInput').files[0];
     if (!file) return;
-    if (file.size > 80*1024) { alert('Аватар макс. 80 КБ'); return; }
+    if (file.size > 60*1024) { alert('Аватар макс. 60 КБ'); return; }
     const reader = new FileReader();
     reader.onload = () => { me.avatar = reader.result; updateUI(); };
     reader.readAsDataURL(file);
 }
 
-// Поиск друзей
+// ПОИСК ДРУЗЕЙ
 async function searchUsers() {
     const q = norm($('friendNickInput').value);
     const sug = $('userSuggestions');
@@ -598,7 +603,7 @@ async function searchUsers() {
 }
 function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestions').style.display='none'; }
 
-// Настройки
+// НАСТРОЙКИ
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
 function closeSettings() { $('settingsPanel').classList.remove('open'); }
 
@@ -606,15 +611,15 @@ $('btnSaveSettings').onclick = async () => {
     const db = await loadDB();
     const idx = db.users.findIndex(u => norm(u.nick)===norm(me.nick));
     if (idx===-1) return;
-    const newNick = $('settingsNick').value.trim();
-    if (norm(newNick)!==norm(me.nick) && db.users.find(u => norm(u.nick)===norm(newNick))) return alert('Никнейм занят');
+    const newNick = norm($('settingsNick').value);
+    if (newNick !== norm(me.nick) && db.users.find(u => norm(u.nick)===newNick)) return alert('Никнейм занят');
     const newPass = $('settingsPass').value;
     if (newPass && newPass.length < 8) return alert('Пароль от 8 символов');
-    db.users[idx] = {...db.users[idx], nick:newNick||me.nick, status:$('settingsStatus').value.trim()||'В сети', bio:$('settingsBio').value.trim(), email:$('settingsEmail').value.trim().toLowerCase()||me.email, avatar:me.avatar, avatarColor:me.avatarColor};
+    db.users[idx] = {...db.users[idx], nick: newNick||me.nick, status: $('settingsStatus').value.trim()||'В сети', bio: $('settingsBio').value.trim(), email: norm($('settingsEmail').value)||me.email, avatar: me.avatar, avatarColor: me.avatarColor};
     if (newPass.length >= 8) db.users[idx].pass = newPass;
     await saveDB(db);
     me = db.users[idx];
-    localStorage.setItem('trust_session', JSON.stringify({nick:me.nick, email:me.email}));
+    localStorage.setItem('trust_session', JSON.stringify({nick: me.nick, email: me.email}));
     updateUI(); closeSettings(); refresh();
 };
 
@@ -646,12 +651,12 @@ $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display='none'; });
 
-// Автовход
+// АВТОВХОД
 (async () => {
     const saved = JSON.parse(localStorage.getItem('trust_session')||'null');
     if (saved) {
         const db = await loadDB();
-        const u = db.users.find(u => norm(u.nick)===norm(saved.nick) && u.email.toLowerCase()===saved.email.toLowerCase());
+        const u = db.users.find(u => norm(u.nick)===norm(saved.nick) && norm(u.email)===norm(saved.email));
         if (u) { me = u; showApp(); }
     }
 })();
