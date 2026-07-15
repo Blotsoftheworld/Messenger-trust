@@ -55,6 +55,12 @@
         .msg img { max-width: 200px; max-height: 200px; border-radius: 10px; margin: 5px 0; cursor: pointer; display: block; }
         .msg video { max-width: 200px; max-height: 200px; border-radius: 10px; margin: 5px 0; display: block; }
         .msg audio { max-width: 200px; margin: 5px 0; display: block; }
+        .file-box { display: flex; align-items: center; gap: 10px; background: rgba(0,0,0,0.2); border-radius: 10px; padding: 10px; margin: 5px 0; }
+        .file-icon { font-size: 28px; }
+        .file-info { flex: 1; min-width: 0; }
+        .file-name { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-meta { font-size: 11px; color: var(--text3); }
+        .download-btn { background: var(--accent); color: #fff; border: none; border-radius: 50%; width: 32px; height: 32px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
         .input-area { padding: 8px 10px; border-top: 1px solid var(--border); display: flex; gap: 6px; background: var(--bg3); align-items: center; }
         .input-area input[type="text"] { flex: 1; border-radius: 20px; }
         .icon-btn { width: 34px; height: 34px; border-radius: 50%; background: var(--input); border: none; color: var(--text2); cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
@@ -153,7 +159,7 @@
         <div class="messages hidden" id="messagesContainer"></div>
         <div class="preview-bar hidden" id="previewBar"></div>
         <div class="input-area hidden" id="inputArea">
-            <input type="file" id="fileInput" accept="image/*,video/*,audio/*" onchange="handleFileSelect()" hidden>
+            <input type="file" id="fileInput" accept="*/*" onchange="handleFileSelect()" hidden>
             <button class="icon-btn" onclick="document.getElementById('fileInput').click()">📎</button>
             <input type="text" id="messageInput" placeholder="Сообщение...">
             <button class="icon-btn" id="voiceBtn" onclick="toggleVoice()">🎤</button>
@@ -162,7 +168,6 @@
     </div>
 </div>
 
-<!-- ПРОФИЛЬ -->
 <div class="profile-panel" id="profilePanel">
     <div style="padding:12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
         <h3>👤 Профиль</h3>
@@ -183,7 +188,6 @@
     </div>
 </div>
 
-<!-- НАСТРОЙКИ -->
 <div class="settings-panel" id="settingsPanel">
     <div style="padding:12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
         <h3>⚙️ Настройки</h3>
@@ -221,7 +225,6 @@
     </div>
 </div>
 
-<!-- МОДАЛКИ -->
 <div class="modal hidden" id="addFriendModal">
     <div class="card">
         <h3>➕ Добавить друга</h3>
@@ -302,7 +305,6 @@ function setLoading(btn, loading) {
 document.querySelectorAll('button[type="submit"]').forEach(b => b.setAttribute('data-text', b.textContent));
 $('sendBtn')?.setAttribute('data-text', '➤');
 
-// АВТОРИЗАЦИЯ
 $('tabLogin').onclick = () => showAuthTab('login');
 $('tabReg').onclick = () => showAuthTab('reg');
 function showAuthTab(tab) {
@@ -423,7 +425,6 @@ function updateUI() {
     document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.avatarColor = d.dataset.color; applyTheme(me.avatarColor); updateUI(); });
 }
 
-// ПРОСМОТР ПРОФИЛЯ
 function openProfile() { updateUI(); $('profilePanel').classList.add('open'); $('btnOpenChat').classList.add('hidden'); }
 function closeProfile() { $('profilePanel').classList.remove('open'); }
 
@@ -445,7 +446,6 @@ async function viewProfile() {
     $('profilePanel').classList.add('open');
 }
 
-// ЧАТЫ
 async function refresh() {
     if (!me) return;
     const db = await loadDB();
@@ -506,12 +506,51 @@ async function renderMessages(db) {
             if (m.fileType==='image') content += `<img src="${m.file}" loading="lazy">`;
             else if (m.fileType==='video') content += `<video src="${m.file}" controls></video>`;
             else if (m.fileType==='audio') content += `<audio src="${m.file}" controls></audio>`;
-            else content += `<a href="${m.file}" target="_blank">📎 Файл</a>`;
+            else {
+                const fileName = m.fileName || 'file';
+                const fileSize = m.fileSize ? formatSize(m.fileSize) : '';
+                content += `
+                    <div class="file-box">
+                        <div class="file-icon">📄</div>
+                        <div class="file-info">
+                            <div class="file-name">${escapeHtml(fileName)}</div>
+                            <div class="file-meta">${fileSize} ${m.fileType ? m.fileType.toUpperCase() : ''}</div>
+                        </div>
+                        <button class="download-btn" onclick="downloadFile('${m.file}', '${escapeHtml(fileName)}', this)" title="Скачать">⬇️</button>
+                    </div>`;
+            }
         }
         if (text) content += `<div>${text}</div>`;
         return `<div class="msg ${m.from===me.nick?'own':'other'}">${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
     }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">💜 Начните переписку!</div>';
     $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
+}
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' Б';
+    if (bytes < 1024*1024) return (bytes/1024).toFixed(1) + ' КБ';
+    return (bytes/(1024*1024)).toFixed(1) + ' МБ';
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function downloadFile(dataUrl, fileName, btn) {
+    btn.innerHTML = '<span class="spinner"></span>';
+    btn.disabled = true;
+    setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = dataUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        btn.innerHTML = '⬇️';
+        btn.disabled = false;
+    }, 800);
 }
 
 async function sendMessage(text='', file=null, fileType='') {
@@ -524,9 +563,19 @@ async function sendMessage(text='', file=null, fileType='') {
         if (!db.messages[id]) db.messages[id] = [];
         const key = getKey(me.nick, activeChat);
         const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
-        db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
+        const msg = { from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text };
+        if (file && fileType!=='image' && fileType!=='video' && fileType!=='audio') {
+            msg.fileName = pendingFile?.name || 'file';
+            msg.fileSize = pendingFile?.size || 0;
+        }
+        db.messages[id].push(msg);
+        // автоочистка при превышении ~900 КБ
+        while (JSON.stringify(db).length > 900000 && db.messages[id].length > 1) {
+            db.messages[id].shift();
+        }
         await saveDB(db);
-        pendingFile = null; $('previewBar').classList.add('hidden');
+        pendingFile = null;
+        $('previewBar').classList.add('hidden');
         refresh();
     } catch(e) { alert('Ошибка: '+e.message); }
     finally { setLoading(btn, false); if (pendingFile) cancelFile(); }
@@ -542,17 +591,45 @@ $('messageInput').onkeydown = e => { if (e.key==='Enter') $('sendBtn').click(); 
 async function handleFileSelect() {
     const file = $('fileInput').files[0];
     if (!file) return;
-    if (file.size > 1024*1024) { alert('Файл слишком большой (макс. 1 МБ)'); return; }
+    const MAX_SIZE = 10 * 1024 * 1024;
+    if (file.size > MAX_SIZE) { alert('Файл слишком большой. Максимум 10 МБ.'); return; }
     const reader = new FileReader();
-    reader.onload = () => {
-        const type = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : file.type.startsWith('audio/') ? 'audio' : 'file';
-        pendingFile = { data: reader.result, type, name: file.name };
-        let preview = type==='image' ? `<img src="${reader.result}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;">` : type==='video' ? '🎬 Видео' : type==='audio' ? '🎵 Аудио' : `📎 ${file.name}`;
-        $('previewBar').innerHTML = `${preview} <span style="flex:1;font-size:11px;color:var(--text2)">Готово</span> <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`;
-        $('previewBar').classList.remove('hidden');
+    reader.onload = async () => {
+        let data = reader.result;
+        let type = 'file';
+        if (file.type.startsWith('image/')) type = 'image';
+        else if (file.type.startsWith('video/')) type = 'video';
+        else if (file.type.startsWith('audio/')) type = 'audio';
+        
+        if (type === 'image' && data.length > 200*1024) {
+            const img = new Image(); img.src = data;
+            await new Promise(r => img.onload = r);
+            const canvas = document.createElement('canvas');
+            let w = img.width, h = img.height;
+            const max = 800;
+            if (w > max || h > max) {
+                if (w > h) { h = h*max/w; w = max; }
+                else { w = w*max/h; h = max; }
+            }
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            data = canvas.toDataURL('image/jpeg', 0.7);
+        }
+        pendingFile = { data, type, name: file.name, size: file.size };
+        showPreview(data, type);
     };
     reader.readAsDataURL(file);
     $('fileInput').value = '';
+}
+
+function showPreview(data, type) {
+    let preview = '';
+    if (type==='image') preview = `<img src="${data}" style="width:40px;height:40px;object-fit:cover;border-radius:6px;">`;
+    else if (type==='video') preview = '🎬 Видео';
+    else if (type==='audio') preview = '🎵 Аудио';
+    else preview = `📄 ${pendingFile.name}`;
+    $('previewBar').innerHTML = `${preview} <span style="flex:1;font-size:11px;">Готово</span> <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;">✕</button>`;
+    $('previewBar').classList.remove('hidden');
 }
 
 function cancelFile() { pendingFile=null; $('previewBar').classList.add('hidden'); }
@@ -569,8 +646,8 @@ async function toggleVoice() {
             if (blob.size > 500*1024) { alert('Слишком длинное (макс. 30 сек)'); return; }
             const reader = new FileReader();
             reader.onload = () => {
-                pendingFile = {data:reader.result, type:'audio', name:'Голосовое'};
-                $('previewBar').innerHTML = `🎤 Голосовое <span style="flex:1;font-size:11px;color:var(--text2)">Готово</span> <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`;
+                pendingFile = { data:reader.result, type:'audio', name:'Голосовое', size: blob.size };
+                $('previewBar').innerHTML = `🎤 Голосовое <span style="flex:1;">Готово</span> <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;">✕</button>`;
                 $('previewBar').classList.remove('hidden');
             };
             reader.readAsDataURL(blob);
@@ -587,7 +664,7 @@ async function toggleVoice() {
 function updateAvatar() {
     const file = $('avatarFileInput').files[0];
     if (!file) return;
-    if (file.size > 200*1024) { alert('Аватар макс. 200 КБ'); return; }
+    if (file.size > 5*1024*1024) { alert('Аватар макс. 5 МБ'); return; }
     const reader = new FileReader();
     reader.onload = () => { me.avatar = reader.result; updateUI(); };
     reader.readAsDataURL(file);
@@ -651,7 +728,6 @@ $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display='none'; });
 
-// АВТОВХОД
 (async () => {
     const saved = JSON.parse(localStorage.getItem('trust_session')||'null');
     if (saved) {
