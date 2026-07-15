@@ -84,7 +84,6 @@
 </head>
 <body>
 
-<!-- АВТОРИЗАЦИЯ -->
 <div id="authScreen">
     <div class="card">
         <div style="font-size:clamp(32px, 8vw, 44px);">💜</div>
@@ -124,7 +123,6 @@
     </div>
 </div>
 
-<!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
 <div id="appScreen" class="hidden">
     <div class="sidebar" id="sidebar">
         <div class="sidebar-head">
@@ -162,7 +160,6 @@
     </div>
 </div>
 
-<!-- ПАНЕЛЬ НАСТРОЕК -->
 <div class="settings-panel" id="settingsPanel">
     <div style="padding:12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
         <h3>⚙️ Настройки</h3>
@@ -207,7 +204,6 @@
     </div>
 </div>
 
-<!-- МОДАЛКИ -->
 <div class="modal hidden" id="addFriendModal">
     <div class="card">
         <h3>➕ Добавить друга</h3>
@@ -246,18 +242,37 @@ let mediaRecorder = null, audioChunks = [], stream = null;
 let pendingFile = null, encryptionEnabled = true, lastMsgCount = 0;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
 
-// ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-function norm(str) { return String(str || '').toLowerCase().trim(); }
+// БЕЗОПАСНОЕ ШИФРОВАНИЕ БЕЗ btoa
+function toBase64(arr) {
+    return btoa(String.fromCharCode(...new Uint8Array(arr)));
+}
+function fromBase64(str) {
+    return new Uint8Array(atob(str).split('').map(c => c.charCodeAt(0)));
+}
 function encrypt(text, key) {
     if (!text) return '';
-    return btoa(unescape(encodeURIComponent(text)).split('').map((c,i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''));
+    const enc = new TextEncoder().encode(text);
+    const keyBytes = new TextEncoder().encode(key);
+    const result = new Uint8Array(enc.length);
+    for (let i = 0; i < enc.length; i++) {
+        result[i] = enc[i] ^ keyBytes[i % keyBytes.length];
+    }
+    return toBase64(result);
 }
 function decrypt(encoded, key) {
     if (!encoded) return '';
-    try { return decodeURIComponent(escape(atob(encoded).split('').map((c,i) => String.fromCharCode(c.charCodeAt(0) ^ key.charCodeAt(i % key.length))).join(''))); }
-    catch { return encoded; }
+    try {
+        const data = fromBase64(encoded);
+        const keyBytes = new TextEncoder().encode(key);
+        const result = new Uint8Array(data.length);
+        for (let i = 0; i < data.length; i++) {
+            result[i] = data[i] ^ keyBytes[i % keyBytes.length];
+        }
+        return new TextDecoder().decode(result);
+    } catch { return encoded; }
 }
-function getKey(a, b) { return [norm(a), norm(b)].sort().join('_') + '_key'; }
+function getKey(a, b) { return [String(a||'').toLowerCase().trim(), String(b||'').toLowerCase().trim()].sort().join('_') + '_key'; }
+function norm(s) { return String(s||'').toLowerCase().trim(); }
 
 // РАБОТА С JSONBIN
 async function loadDB() {
@@ -310,7 +325,6 @@ $('forgotPassBtn').onclick = () => {
 };
 $('backToLogin').onclick = () => { showAuthTab('login'); $('resetSuccess').textContent=''; };
 
-// РЕГИСТРАЦИЯ — ВСЕГДА В НИЖНЕМ РЕГИСТРЕ
 $('regForm').onsubmit = async (e) => {
     e.preventDefault();
     const btn = $('regBtn'); setLoading(btn, true);
@@ -335,7 +349,6 @@ $('regForm').onsubmit = async (e) => {
     showApp();
 };
 
-// ВХОД — ИСПРАВЛЕН (двойная проверка + повторная загрузка)
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     const btn = $('loginBtn'); setLoading(btn, true);
@@ -345,13 +358,11 @@ $('loginForm').onsubmit = async (e) => {
     const email = norm($('loginEmail').value);
     const pass = $('loginPass').value;
     
-    // Первая попытка
     let db = await loadDB();
     let user = db.users.find(u => norm(u.nick) === nick && norm(u.email) === email && u.pass === pass);
     
-    // Если не нашли — пробуем ещё раз через секунду (JSONBin мог не успеть)
     if (!user) {
-        await new Promise(r => setTimeout(r, 1000));
+        await new Promise(r => setTimeout(r, 1500));
         db = await loadDB();
         user = db.users.find(u => norm(u.nick) === nick && norm(u.email) === email && u.pass === pass);
     }
@@ -368,7 +379,6 @@ $('loginForm').onsubmit = async (e) => {
     showApp();
 };
 
-// СБРОС ПАРОЛЯ
 $('resetForm').onsubmit = async (e) => {
     e.preventDefault();
     const btn = $('resetBtn'); setLoading(btn, true);
@@ -386,7 +396,6 @@ $('resetForm').onsubmit = async (e) => {
     setTimeout(() => $('backToLogin').click(), 1200);
 };
 
-// ПОКАЗАТЬ ПРИЛОЖЕНИЕ
 function showApp() {
     $('authScreen').classList.add('hidden');
     $('appScreen').classList.remove('hidden');
@@ -422,7 +431,6 @@ function updateUI() {
 
 function toggleEncryption() { encryptionEnabled = $('encryptionToggle').checked; }
 
-// ЧАТЫ И СООБЩЕНИЯ
 async function refresh() {
     if (!me) return;
     const db = await loadDB();
@@ -513,7 +521,6 @@ $('sendBtn').onclick = () => {
 };
 $('messageInput').onkeydown = e => { if (e.key==='Enter') $('sendBtn').click(); };
 
-// МЕДИА
 async function handleFileSelect() {
     const file = $('fileInput').files[0];
     if (!file) return;
@@ -591,7 +598,6 @@ function updateAvatar() {
     reader.readAsDataURL(file);
 }
 
-// ПОИСК ДРУЗЕЙ
 async function searchUsers() {
     const q = norm($('friendNickInput').value);
     const sug = $('userSuggestions');
@@ -603,7 +609,6 @@ async function searchUsers() {
 }
 function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestions').style.display='none'; }
 
-// НАСТРОЙКИ
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
 function closeSettings() { $('settingsPanel').classList.remove('open'); }
 
@@ -651,7 +656,6 @@ $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display='none'; });
 
-// АВТОВХОД
 (async () => {
     const saved = JSON.parse(localStorage.getItem('trust_session')||'null');
     if (saved) {
