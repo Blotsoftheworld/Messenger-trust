@@ -162,7 +162,7 @@
     </div>
 </div>
 
-<!-- ПАНЕЛЬ ПРОФИЛЯ -->
+<!-- ПРОФИЛЬ -->
 <div class="profile-panel" id="profilePanel">
     <div style="padding:12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
         <h3>👤 Профиль</h3>
@@ -171,20 +171,19 @@
     <div class="profile-section" style="text-align:center">
         <div class="avatar" id="profileAvatar" style="width:80px;height:80px;font-size:32px;margin:0 auto;">?</div>
         <h3 id="profileNick" style="margin-top:10px;"></h3>
-        <p id="profileStatus" style="color:var(--online);font-size:13px;"></p>
+        <p id="profileOnline" style="font-size:13px;"></p>
     </div>
     <div class="profile-section">
-        <p><b>Email:</b> <span id="profileEmail"></span></p>
-        <p><b>О себе:</b> <span id="profileBio"></span></p>
+        <p><b>Статус:</b> <span id="profileBio"></span></p>
         <p><b>Друзей:</b> <span id="profileFriends"></span></p>
-        <p><b>В сети:</b> <span id="profileOnline"></span></p>
+        <p><b>Активность:</b> <span id="profileLastSeen"></span></p>
     </div>
     <div style="padding:14px;">
         <button id="btnOpenChat" style="width:100%;">💬 Написать</button>
     </div>
 </div>
 
-<!-- ПАНЕЛЬ НАСТРОЕК -->
+<!-- НАСТРОЙКИ -->
 <div class="settings-panel" id="settingsPanel">
     <div style="padding:12px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between">
         <h3>⚙️ Настройки</h3>
@@ -256,7 +255,6 @@ let mediaRecorder = null, audioChunks = [], stream = null;
 let pendingFile = null, encryptionEnabled = true;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
 
-// Безопасное шифрование
 function toBase64(arr) { return btoa(String.fromCharCode(...new Uint8Array(arr))); }
 function fromBase64(str) { return new Uint8Array(atob(str).split('').map(c => c.charCodeAt(0))); }
 function encrypt(text, key) {
@@ -280,7 +278,6 @@ function decrypt(encoded, key) {
 function getKey(a, b) { return [String(a||'').toLowerCase().trim(), String(b||'').toLowerCase().trim()].sort().join('_') + '_key'; }
 function norm(s) { return String(s||'').toLowerCase().trim(); }
 
-// JSONBin
 async function loadDB() {
     try {
         const r = await fetch(API_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
@@ -413,11 +410,10 @@ function updateUI() {
     $('myName').textContent = me.nick;
     $('myStatus').textContent = me.status;
     $('profileNick').textContent = me.nick;
-    $('profileStatus').textContent = '🟢 В сети';
-    $('profileEmail').textContent = me.email;
     $('profileBio').textContent = me.bio || 'Не указано';
     $('profileFriends').textContent = (me.friends||[]).length;
     $('profileOnline').textContent = '🟢 Онлайн';
+    $('profileLastSeen').textContent = 'Сейчас';
     $('settingsNick').value = me.nick;
     $('settingsStatus').value = me.status;
     $('settingsBio').value = me.bio || '';
@@ -440,11 +436,10 @@ async function viewProfile() {
     if (friend.avatar) { pa.style.backgroundImage=`url(${friend.avatar})`; pa.style.backgroundColor='transparent'; pa.textContent=''; }
     else { pa.style.backgroundImage='none'; pa.style.backgroundColor=friend.avatarColor||themeColors[0]; pa.textContent=friend.nick[0].toUpperCase(); }
     $('profileNick').textContent = friend.nick;
-    $('profileStatus').textContent = isOnline(friend) ? '🟢 В сети' : '⚫ Не в сети';
-    $('profileEmail').textContent = friend.email;
     $('profileBio').textContent = friend.bio || 'Не указано';
     $('profileFriends').textContent = (friend.friends||[]).length;
-    $('profileOnline').textContent = isOnline(friend) ? '🟢 Онлайн' : '⚫ Был(а) ' + new Date(friend.lastOnline||0).toLocaleString();
+    $('profileOnline').textContent = isOnline(friend) ? '🟢 В сети' : '⚫ Не в сети';
+    $('profileLastSeen').textContent = friend.lastOnline ? new Date(friend.lastOnline).toLocaleString() : 'Давно';
     $('btnOpenChat').classList.remove('hidden');
     $('btnOpenChat').onclick = () => { closeProfile(); openChat(friend.nick); };
     $('profilePanel').classList.add('open');
@@ -598,7 +593,6 @@ function updateAvatar() {
     reader.readAsDataURL(file);
 }
 
-// ПОИСК ДРУЗЕЙ
 async function searchUsers() {
     const q = norm($('friendNickInput').value);
     const sug = $('userSuggestions');
@@ -610,7 +604,6 @@ async function searchUsers() {
 }
 function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestions').style.display='none'; }
 
-// НАСТРОЙКИ
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
 function closeSettings() { $('settingsPanel').classList.remove('open'); }
 
