@@ -436,9 +436,23 @@ function renderMessages(db) {
     if (wasNearBottom) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
 }
 
+// ★ ИСПРАВЛЕНО: мгновенное добавление в DOM ★
 async function sendMessage(text='', file=null, fileType='') {
     if (!activeChat || !me) return;
-    const btn = $('sendBtn'); setLoading(btn, true);
+    const btn = $('sendBtn');
+    setLoading(btn, true);
+
+    // 1. Сразу показываем сообщение локально
+    const tempId = 'temp_' + Date.now();
+    const msgHTML = `
+        <div class="msg own" id="${tempId}">
+            ${file ? `<div class="file-attachment"><div class="file-icon">📎</div><div class="file-info"><div class="file-name">Файл</div></div></div>` : ''}
+            ${text ? `<div>${text}</div>` : ''}
+            <div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>
+        </div>`;
+    $('messagesContainer').insertAdjacentHTML('beforeend', msgHTML);
+    $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
+
     try {
         const db = await loadDB();
         const id = [me.nick, activeChat].sort().join('_');
@@ -448,11 +462,21 @@ async function sendMessage(text='', file=null, fileType='') {
         const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
         db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
         await saveDB(db);
-        pendingFile = null; $('previewBar').classList.add('hidden');
+        // Удаляем временное сообщение
+        const tempEl = document.getElementById(tempId);
+        if (tempEl) tempEl.remove();
+        pendingFile = null;
+        $('previewBar').classList.add('hidden');
         userScrolledUp = false;
-        await refresh();
-    } catch(e) { alert('Ошибка: '+e.message); }
-    finally { setLoading(btn, false); if (pendingFile) cancelFile(); }
+        await refresh(); // перерисовываем из базы
+    } catch(e) {
+        alert('Ошибка: '+e.message);
+        const tempEl = document.getElementById(tempId);
+        if (tempEl) tempEl.remove();
+    } finally {
+        setLoading(btn, false);
+        if (pendingFile) cancelFile();
+    }
 }
 
 $('sendBtn').onclick = () => { const text = $('messageInput').value.trim(); if (pendingFile) { sendMessage(text, pendingFile.data, pendingFile.type); $('messageInput').value = ''; } else if (text) { sendMessage(text); $('messageInput').value = ''; } };
