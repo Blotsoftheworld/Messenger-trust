@@ -239,7 +239,7 @@ const CREATOR_EMAIL = 'logunov2512@gmail.com';
 let me = null, activeChat = null, refreshTimer = null, onlineTimer = null;
 let mediaRecorder = null, audioChunks = [], stream = null;
 let pendingFile = null, encryptionEnabled = true, userScrolledUp = false;
-let viewingProfile = null;
+let viewingProfile = null, lastRenderedCount = -1;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
 
 function toBase64(arr) { return btoa(String.fromCharCode(...new Uint8Array(arr))); }
@@ -269,14 +269,9 @@ async function loadDB() {
     const data = (await r.json()).record;
     return (data && data.users) ? data : { users: [], messages: {} };
 }
-
 async function saveDB(data) {
     if (!data || !data.users) return;
-    await fetch(API_URL, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-        body: JSON.stringify(data)
-    });
+    await fetch(API_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY }, body: JSON.stringify(data) });
 }
 
 function setLoading(btn, loading) { btn.disabled = loading; btn.innerHTML = loading ? '<span class="spinner"></span>' : btn.getAttribute('data-text'); }
@@ -308,8 +303,7 @@ $('regForm').onsubmit = async (e) => {
     if (db.users.find(u => norm(u.nick)===nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; }
     const verified = email === CREATOR_EMAIL;
     const newUser = { nick, email, pass, avatar:'', avatarColor:themeColors[0], status:'В сети', bio:'', friends:[], lastOnline: Date.now(), verified };
-    db.users.push(newUser);
-    await saveDB(db);
+    db.users.push(newUser); await saveDB(db);
     me = newUser;
     localStorage.setItem('trust_session_nick', nick);
     setLoading(btn, false); showApp();
@@ -333,8 +327,7 @@ $('resetForm').onsubmit = async (e) => {
     const db = await loadDB();
     const idx = db.users.findIndex(u => norm(u.nick)===nick && norm(u.email)===email);
     if (idx===-1) { $('resetError').textContent='Не найден'; setLoading(btn, false); return; }
-    db.users[idx].pass = newPass;
-    await saveDB(db);
+    db.users[idx].pass = newPass; await saveDB(db);
     $('resetSuccess').textContent='Пароль изменён!'; setLoading(btn, false);
 };
 
@@ -361,14 +354,7 @@ function updateUI() {
         else { el.style.backgroundImage='none'; el.style.backgroundColor=me.avatarColor||themeColors[0]; el.textContent=me.nick[0].toUpperCase(); }
         const oldBadge = el.querySelector('.verified-badge');
         if (oldBadge) oldBadge.remove();
-        if (me.verified) {
-            const badge = document.createElement('div');
-            badge.className = 'verified-badge';
-            badge.textContent = '✔';
-            badge.title = 'Верифицирован';
-            el.style.position = 'relative';
-            el.appendChild(badge);
-        }
+        if (me.verified) { const badge = document.createElement('div'); badge.className = 'verified-badge'; badge.textContent = '✔'; badge.title = 'Верифицирован'; el.style.position = 'relative'; el.appendChild(badge); }
     });
     $('myName').textContent=me.nick; $('myStatus').textContent=me.status;
     $('settingsNick').value=me.nick; $('settingsStatus').value=me.status; $('settingsBio').value=me.bio||'';
@@ -381,30 +367,19 @@ async function toggleVerify(targetNick) {
     if (!me || norm(me.email) !== CREATOR_EMAIL) return;
     const db = await loadDB();
     const user = db.users.find(u => norm(u.nick) === norm(targetNick));
-    if (!user) return;
-    user.verified = !user.verified;
-    await saveDB(db);
+    if (!user) return; user.verified = !user.verified; await saveDB(db);
     if (viewingProfile === targetNick) renderProfileView(user);
     refresh();
 }
 
-function openProfile() {
-    viewingProfile = me.nick;
-    renderProfileView(me);
-    $('profilePanel').classList.add('open');
-    $('btnOpenChat').classList.add('hidden');
-}
+function openProfile() { viewingProfile = me.nick; renderProfileView(me); $('profilePanel').classList.add('open'); $('btnOpenChat').classList.add('hidden'); }
 function closeProfile() { $('profilePanel').classList.remove('open'); viewingProfile = null; }
 
 async function viewProfile() {
-    if (!activeChat) return;
-    viewingProfile = activeChat;
-    const db = await loadDB();
-    const friend = db.users.find(u => norm(u.nick)===norm(activeChat));
-    if (!friend) return;
-    renderProfileView(friend);
-    $('btnOpenChat').classList.remove('hidden');
-    $('btnOpenChat').onclick = () => { closeProfile(); openChat(friend.nick); };
+    if (!activeChat) return; viewingProfile = activeChat;
+    const db = await loadDB(); const friend = db.users.find(u => norm(u.nick)===norm(activeChat));
+    if (!friend) return; renderProfileView(friend);
+    $('btnOpenChat').classList.remove('hidden'); $('btnOpenChat').onclick = () => { closeProfile(); openChat(friend.nick); };
     $('profilePanel').classList.add('open');
 }
 
@@ -412,27 +387,15 @@ function renderProfileView(user) {
     const pa = $('profileAvatar');
     if (user.avatar) { pa.style.backgroundImage=`url(${user.avatar})`; pa.style.backgroundColor='transparent'; pa.textContent=''; }
     else { pa.style.backgroundImage='none'; pa.style.backgroundColor=user.avatarColor||themeColors[0]; pa.textContent=user.nick[0].toUpperCase(); }
-    const oldBadge = pa.querySelector('.verified-badge');
-    if (oldBadge) oldBadge.remove();
-    if (user.verified) {
-        const badge = document.createElement('div');
-        badge.className = 'verified-badge';
-        badge.textContent = '✔';
-        pa.style.position = 'relative';
-        pa.appendChild(badge);
-    }
-    $('profileNick').textContent=user.nick;
-    $('profileBio').textContent=user.bio||'Не указано';
+    const oldBadge = pa.querySelector('.verified-badge'); if (oldBadge) oldBadge.remove();
+    if (user.verified) { const badge = document.createElement('div'); badge.className = 'verified-badge'; badge.textContent = '✔'; pa.style.position = 'relative'; pa.appendChild(badge); }
+    $('profileNick').textContent=user.nick; $('profileBio').textContent=user.bio||'Не указано';
     $('profileFriends').textContent=(user.friends||[]).length;
     $('profileOnline').textContent=isOnline(user)?'🟢 В сети':'⚫ Не в сети';
     $('profileLastSeen').textContent=user.lastOnline?new Date(user.lastOnline).toLocaleString():'Давно';
-    
-    const vc = $('verifyControls');
-    vc.innerHTML = '';
+    const vc = $('verifyControls'); vc.innerHTML = '';
     if (me && norm(me.email) === CREATOR_EMAIL && norm(user.nick) !== norm(me.nick)) {
-        vc.innerHTML = user.verified 
-            ? `<button class="unverify-btn" onclick="toggleVerify('${user.nick}')">❌ Забрать галочку</button>`
-            : `<button class="verify-btn" onclick="toggleVerify('${user.nick}')">✔ Выдать галочку</button>`;
+        vc.innerHTML = user.verified ? `<button class="unverify-btn" onclick="toggleVerify('${user.nick}')">❌ Забрать галочку</button>` : `<button class="verify-btn" onclick="toggleVerify('${user.nick}')">✔ Выдать галочку</button>`;
     }
 }
 
@@ -441,212 +404,58 @@ async function refresh() {
     const db = await loadDB();
     me = db.users.find(u => norm(u.nick)===norm(me.nick)) || me;
     const chats = [], seen = new Set();
-    Object.entries(db.messages||{}).forEach(([id, msgs]) => {
-        if (id.includes(me.nick) && msgs.length) {
-            const p = id.split('_').find(x => x!==me.nick);
-            if (!seen.has(p)) {
-                seen.add(p);
-                const l = msgs[msgs.length-1];
-                chats.push({partner:p, last:l.file?'[Медиа]':(l.text||''), time:l.time});
-            }
-        }
-    });
+    Object.entries(db.messages||{}).forEach(([id, msgs]) => { if (id.includes(me.nick) && msgs.length) { const p = id.split('_').find(x => x!==me.nick); if (!seen.has(p)) { seen.add(p); const l=msgs[msgs.length-1]; chats.push({partner:p, last:l.file?'[Медиа]':(l.text||''), time:l.time}); } } });
     (me.friends||[]).forEach(f => { if (!seen.has(f)) chats.push({partner:f, last:'Начните общение!', time:0}); });
     chats.sort((a,b) => b.time - a.time);
-    
-    $('chatList').innerHTML = chats.length ? chats.map(c => {
-        const friend = db.users.find(u => norm(u.nick)===norm(c.partner));
-        const online = isOnline(friend);
-        return `<div class="chat-item ${activeChat===c.partner?'active':''}" data-p="${c.partner}">
-            <div class="avatar" style="background:${friend?.avatarColor||'var(--accent)'};position:relative;">
-                ${c.partner[0].toUpperCase()}
-                ${online?'<div class="online-dot"></div>':''}
-                ${friend?.verified?'<div class="verified-badge">✔</div>':''}
-            </div>
-            <div style="flex:1;min-width:0">
-                <div style="font-weight:600;font-size:13px">${c.partner}${friend?.verified?' <span style="color:#4ade80;">✔</span>':''}</div>
-                <div style="font-size:11px;color:var(--text3);">${(c.last||'').slice(0,30)}</div>
-            </div>
-            ${c.time?`<div style="font-size:10px;color:var(--text3);">${new Date(c.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>`:''}
-        </div>`;
+    $('chatList').innerHTML = chats.length ? chats.map(c => { const friend = db.users.find(u => norm(u.nick)===norm(c.partner)); const online = isOnline(friend);
+        return `<div class="chat-item ${activeChat===c.partner?'active':''}" data-p="${c.partner}"><div class="avatar" style="background:${friend?.avatarColor||'var(--accent)'};position:relative;">${c.partner[0].toUpperCase()}${online?'<div class="online-dot"></div>':''}${friend?.verified?'<div class="verified-badge">✔</div>':''}</div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">${c.partner}${friend?.verified?' <span style="color:#4ade80;">✔</span>':''}</div><div style="font-size:11px;color:var(--text3);">${(c.last||'').slice(0,30)}</div></div>${c.time?`<div style="font-size:10px;color:var(--text3);">${new Date(c.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>`:''}</div>`;
     }).join('') : '<div style="text-align:center;padding:30px;color:var(--text3)">Нет чатов</div>';
-    
     document.querySelectorAll('.chat-item').forEach(el => el.onclick = () => openChat(el.dataset.p));
-    if (activeChat) renderMessages(db);
+    if (activeChat) await renderMessages(db);
 }
 
-function openChat(p) {
-    activeChat = p;
-    userScrolledUp = false;
-    $('emptyChat').classList.add('hidden');
-    $('chatHead').classList.remove('hidden');
-    $('messagesContainer').classList.remove('hidden');
-    $('inputArea').classList.remove('hidden');
-    $('partnerName').textContent = p;
-    $('partnerAvatar').textContent = p[0].toUpperCase();
-    $('partnerAvatar').style.backgroundImage = 'none';
-    $('partnerAvatar').style.backgroundColor = 'var(--accent)';
-    const oldBadge = $('partnerAvatar').querySelector('.verified-badge');
-    if (oldBadge) oldBadge.remove();
-    loadDB().then(db => {
-        const friend = db.users.find(u => norm(u.nick)===norm(p));
-        if (friend) {
-            $('partnerStatus').textContent = isOnline(friend) ? '🟢 В сети' : '⚫ Не в сети';
-            if (friend.verified) {
-                const badge = document.createElement('div');
-                badge.className = 'verified-badge';
-                badge.textContent = '✔';
-                $('partnerAvatar').style.position = 'relative';
-                $('partnerAvatar').appendChild(badge);
-            }
-        }
-    });
-    if (window.innerWidth <= 768) $('sidebar').classList.add('mobile-hidden');
-    refresh();
-}
-
-function closeChat() {
-    activeChat = null;
-    $('sidebar').classList.remove('mobile-hidden');
-    $('emptyChat').classList.remove('hidden');
-    $('chatHead').classList.add('hidden');
-    $('messagesContainer').classList.add('hidden');
-    $('inputArea').classList.add('hidden');
-    $('previewBar').classList.add('hidden');
-}
+function openChat(p) { activeChat=p; userScrolledUp=false; $('emptyChat').classList.add('hidden'); $('chatHead').classList.remove('hidden'); $('messagesContainer').classList.remove('hidden'); $('inputArea').classList.remove('hidden'); $('partnerName').textContent=p; $('partnerAvatar').textContent=p[0].toUpperCase(); $('partnerAvatar').style.backgroundImage='none'; $('partnerAvatar').style.backgroundColor='var(--accent)'; const oldBadge = $('partnerAvatar').querySelector('.verified-badge'); if (oldBadge) oldBadge.remove(); loadDB().then(db => { const friend = db.users.find(u => norm(u.nick)===norm(p)); if (friend) { $('partnerStatus').textContent = isOnline(friend) ? '🟢 В сети' : '⚫ Не в сети'; if (friend.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✔'; $('partnerAvatar').style.position='relative'; $('partnerAvatar').appendChild(badge); } } }); if (window.innerWidth<=768) $('sidebar').classList.add('mobile-hidden'); refresh(); }
+function closeChat() { activeChat=null; $('sidebar').classList.remove('mobile-hidden'); $('emptyChat').classList.remove('hidden'); $('chatHead').classList.add('hidden'); $('messagesContainer').classList.add('hidden'); $('inputArea').classList.add('hidden'); $('previewBar').classList.add('hidden'); }
 
 async function renderMessages(db) {
+    if (!activeChat || !me) return;
     const id = [me.nick, activeChat].sort().join('_');
     const msgs = (db.messages||{})[id] || [];
+    if (msgs.length === lastRenderedCount && lastRenderedCount > 0 && document.querySelectorAll('.msg').length === msgs.length) return;
+    lastRenderedCount = msgs.length;
     const key = getKey(me.nick, activeChat);
     const wasNearBottom = !userScrolledUp;
-    
-    $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
-        let text = m.text || '';
-        if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не расшифровано]';
-        let content = '';
-        if (m.file) {
-            const icons = {image:'🖼️', video:'🎬', audio:'🎵'};
-            const names = {image:'Изображение', video:'Видео', audio:'Аудио'};
-            content += `<div class="file-attachment" onclick="window.open('${m.file}')">
-                <div class="file-icon">${icons[m.fileType]||'📎'}</div>
-                <div class="file-info">
-                    <div class="file-name">${names[m.fileType]||'Файл'}</div>
-                    <div class="file-size">Нажмите для открытия</div>
-                </div>
-            </div>`;
-        }
-        if (text) content += `<div>${text}</div>`;
-        return `<div class="msg ${m.from===me.nick?'own':'other'}">
-            ${content}
-            <div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>
-        </div>`;
-    }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">💜 Начните переписку!</div>';
-    
+    $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => { let text = m.text||''; if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не расшифровано]'; let content = ''; if (m.file) { const icons={image:'🖼️',video:'🎬',audio:'🎵'}, names={image:'Изображение',video:'Видео',audio:'Аудио'}; content += `<div class="file-attachment" onclick="window.open('${m.file}')"><div class="file-icon">${icons[m.fileType]||'📎'}</div><div class="file-info"><div class="file-name">${names[m.fileType]||'Файл'}</div><div class="file-size">Нажмите для открытия</div></div></div>`; } if (text) content += `<div>${text}</div>`; return `<div class="msg ${m.from===me.nick?'own':'other'}">${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`; }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">💜 Начните переписку!</div>';
     if (wasNearBottom) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
 }
 
 async function sendMessage(text='', file=null, fileType='') {
     if (!activeChat || !me) return;
-    
-    const btn = $('sendBtn');
-    setLoading(btn, true);
-    
+    const btn = $('sendBtn'); setLoading(btn, true);
     try {
         const db = await loadDB();
-        const currentUser = db.users.find(u => norm(u.nick) === norm(me.nick));
-        if (!currentUser) { alert('Перезайдите'); setLoading(btn, false); return; }
-        me = currentUser;
-        
         const id = [me.nick, activeChat].sort().join('_');
         if (!db.messages) db.messages = {};
         if (!db.messages[id]) db.messages[id] = [];
-        
         const key = getKey(me.nick, activeChat);
         const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
-        
-        db.messages[id].push({
-            from: me.nick,
-            text: msgText,
-            file: file,
-            fileType: fileType,
-            time: Date.now(),
-            encrypted: encryptionEnabled && !!text
-        });
-        
+        db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
         await saveDB(db);
-        pendingFile = null;
-        $('previewBar').classList.add('hidden');
+        pendingFile = null; $('previewBar').classList.add('hidden');
         userScrolledUp = false;
-        
-        // Сразу рендерим сообщения
-        await renderMessages(db);
-        refresh();
-    } catch(e) {
-        console.error('Ошибка отправки:', e);
-        alert('Ошибка: ' + e.message);
-    } finally {
-        setLoading(btn, false);
-        if (pendingFile) cancelFile();
-    }
+        lastRenderedCount = -1; // Сброс счётчика для принудительного рендера
+        await refresh();
+    } catch(e) { alert('Ошибка: '+e.message); }
+    finally { setLoading(btn, false); if (pendingFile) cancelFile(); }
 }
 
-$('sendBtn').onclick = () => {
-    const text = $('messageInput').value.trim();
-    if (pendingFile) {
-        sendMessage(text, pendingFile.data, pendingFile.type);
-        $('messageInput').value = '';
-    } else if (text) {
-        sendMessage(text);
-        $('messageInput').value = '';
-    }
-};
-
+$('sendBtn').onclick = () => { const text = $('messageInput').value.trim(); if (pendingFile) { sendMessage(text, pendingFile.data, pendingFile.type); $('messageInput').value = ''; } else if (text) { sendMessage(text); $('messageInput').value = ''; } };
 $('messageInput').onkeydown = e => { if (e.key==='Enter') $('sendBtn').click(); };
 
-async function handleFileSelect() {
-    const file = $('fileInput').files[0];
-    if (!file) return;
-    if (file.size > 1024*1024) { alert('Файл слишком большой (макс. 1 МБ)'); return; }
-    const reader = new FileReader();
-    reader.onload = () => {
-        const type = file.type.startsWith('image/')?'image':file.type.startsWith('video/')?'video':file.type.startsWith('audio/')?'audio':'file';
-        pendingFile = { data: reader.result, type, name: file.name };
-        $('previewBar').innerHTML = `<span>${type==='image'?'🖼️':type==='video'?'🎬':type==='audio'?'🎵':'📎'} ${file.name}</span> <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`;
-        $('previewBar').classList.remove('hidden');
-    };
-    reader.readAsDataURL(file);
-    $('fileInput').value = '';
-}
-
+async function handleFileSelect() { const file = $('fileInput').files[0]; if (!file) return; if (file.size>1024*1024) { alert('Файл слишком большой (макс. 1 МБ)'); return; } const reader = new FileReader(); reader.onload = () => { const type = file.type.startsWith('image/')?'image':file.type.startsWith('video/')?'video':file.type.startsWith('audio/')?'audio':'file'; pendingFile = { data: reader.result, type, name: file.name }; $('previewBar').innerHTML = `<span>${type==='image'?'🖼️':type==='video'?'🎬':type==='audio'?'🎵':'📎'} ${file.name}</span> <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`; $('previewBar').classList.remove('hidden'); }; reader.readAsDataURL(file); $('fileInput').value = ''; }
 function cancelFile() { pendingFile=null; $('previewBar').classList.add('hidden'); }
 
-async function toggleVoice() {
-    if (mediaRecorder?.state==='recording') { mediaRecorder.stop(); return; }
-    try {
-        stream = await navigator.mediaDevices.getUserMedia({audio:true});
-        mediaRecorder = new MediaRecorder(stream);
-        audioChunks = [];
-        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-        mediaRecorder.onstop = () => {
-            const blob = new Blob(audioChunks, {type:'audio/webm'});
-            if (blob.size>500*1024) { alert('Слишком длинное (макс. 30 сек)'); return; }
-            const reader = new FileReader();
-            reader.onload = () => {
-                pendingFile = {data:reader.result, type:'audio', name:'Голосовое'};
-                $('previewBar').innerHTML = `🎤 Голосовое <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`;
-                $('previewBar').classList.remove('hidden');
-            };
-            reader.readAsDataURL(blob);
-            stream.getTracks().forEach(t=>t.stop());
-            stream = null;
-            $('voiceBtn').textContent='🎤'; $('voiceBtn').style.background='var(--input)';
-        };
-        mediaRecorder.start();
-        $('voiceBtn').textContent='⏹'; $('voiceBtn').style.background='var(--red)';
-        setTimeout(()=>{if(mediaRecorder?.state==='recording') mediaRecorder.stop();}, 30000);
-    } catch { alert('Нет доступа к микрофону.'); }
-}
+async function toggleVoice() { if (mediaRecorder?.state==='recording') { mediaRecorder.stop(); return; } try { stream = await navigator.mediaDevices.getUserMedia({audio:true}); mediaRecorder = new MediaRecorder(stream); audioChunks = []; mediaRecorder.ondataavailable = e => audioChunks.push(e.data); mediaRecorder.onstop = () => { const blob = new Blob(audioChunks, {type:'audio/webm'}); if (blob.size>500*1024) { alert('Слишком длинное (макс. 30 сек)'); return; } const reader = new FileReader(); reader.onload = () => { pendingFile = {data:reader.result, type:'audio', name:'Голосовое'}; $('previewBar').innerHTML = `🎤 Голосовое <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`; $('previewBar').classList.remove('hidden'); }; reader.readAsDataURL(blob); stream.getTracks().forEach(t=>t.stop()); stream = null; $('voiceBtn').textContent='🎤'; $('voiceBtn').style.background='var(--input)'; }; mediaRecorder.start(); $('voiceBtn').textContent='⏹'; $('voiceBtn').style.background='var(--red)'; setTimeout(()=>{if(mediaRecorder?.state==='recording') mediaRecorder.stop();}, 30000); } catch { alert('Нет доступа к микрофону.'); } }
 
 function updateAvatar() { const file = $('avatarFileInput').files[0]; if (!file) return; if (file.size>100*1024) { alert('Аватар макс. 100 КБ'); return; } const reader = new FileReader(); reader.onload = () => { me.avatar = reader.result; updateUI(); }; reader.readAsDataURL(file); }
 
@@ -667,16 +476,7 @@ $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display='none'; });
 
-(async () => {
-    const savedNick = localStorage.getItem('trust_session_nick');
-    if (savedNick) {
-        try {
-            const db = await loadDB();
-            const user = db.users.find(u => norm(u.nick) === norm(savedNick));
-            if (user) { me = user; showApp(); }
-        } catch(e) {}
-    }
-})();
+(async () => { const savedNick = localStorage.getItem('trust_session_nick'); if (savedNick) { try { const db = await loadDB(); const user = db.users.find(u => norm(u.nick) === norm(savedNick)); if (user) { me = user; showApp(); } } catch(e) {} } })();
 </script>
 </body>
 </html>
