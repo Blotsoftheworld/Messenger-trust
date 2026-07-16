@@ -268,8 +268,9 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const API_KEY = '$2a$10$KiP/8lAd8kH3cgOTTCiUpOAR.vGUj7Nz23lSGU4Z2udjUG8GycMmG';
 const DEV_EMAIL = 'logunov2512@gmail.com';
+const STORAGE_KEY = 'trust_messenger_data';
+const API_KEY = '$2a$10$KiP/8lAd8kH3cgOTTCiUpOAR.vGUj7Nz23lSGU4Z2udjUG8GycMmG';
 let BIN_ID = localStorage.getItem('trust_bin_id') || '';
 let API_URL = BIN_ID ? `https://api.jsonbin.io/v3/b/${BIN_ID}` : '';
 
@@ -277,92 +278,59 @@ let me = null, activeChat = null, refreshTimer = null;
 let mediaRecorder = null, audioChunks = [], stream = null;
 let pendingFile = null, encryptionEnabled = true, userScrolledUp = false;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
-const errorLogs = [];
-
-// Быстрый доступ к данным через Map
-let usersCache = new Map();
-let messagesCache = {};
 
 function norm(s) { return String(s||'').toLowerCase().trim(); }
 
-// Инициализация хранилища при загрузке
-async function initStorage() {
-    if (BIN_ID && API_URL) return true;
-    try {
-        const r = await fetch('https://api.jsonbin.io/v3/b', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY, 'X-Bin-Name': 'trust_db' },
-            body: JSON.stringify({ users: [], messages: {} })
-        });
-        if (r.ok) {
-            const data = await r.json();
-            BIN_ID = data.metadata.id;
-            API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
-            localStorage.setItem('trust_bin_id', BIN_ID);
-            return true;
-        }
-    } catch(e) { console.warn('Не удалось создать хранилище'); }
-    return false;
+function loadLocalDB() {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || { users: [], messages: {} }; }
+    catch { return { users: [], messages: {} }; }
 }
 
-async function loadDB() {
-    // Сначала загружаем из локального кэша для мгновенного отображения
-    try {
-        const cached = JSON.parse(localStorage.getItem('trust_backup'));
-        if (cached) {
-            usersCache = new Map(cached.users?.map(u => [norm(u.nick), u]) || []);
-            messagesCache = cached.messages || {};
-        }
-    } catch {}
-    
-    // Затем синхронизируем с сервером
-    if (!API_URL && !await initStorage()) {
-        return { users: Array.from(usersCache.values()), messages: messagesCache };
+function saveLocalDB(data) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; }
+    catch(e) { console.error('Ошибка сохранения:', e); return false; }
+}
+
+async function syncWithServer() {
+    if (!API_URL) {
+        try {
+            const r = await fetch('https://api.jsonbin.io/v3/b', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
+                body: JSON.stringify(loadLocalDB())
+            });
+            if (r.ok) {
+                const data = await r.json();
+                BIN_ID = data.metadata.id;
+                API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+                localStorage.setItem('trust_bin_id', BIN_ID);
+            }
+        } catch(e) {}
+        return;
     }
-    
     try {
-        const r = await fetch(API_URL + '/latest', { 
+        const r = await fetch(API_URL + '/latest', {
             headers: { 'X-Master-Key': API_KEY },
-            signal: AbortSignal.timeout(3000)
+            signal: AbortSignal.timeout(5000)
         });
         if (r.ok) {
-            const data = (await r.json()).record;
-            if (data) {
-                usersCache = new Map(data.users?.map(u => [norm(u.nick), u]) || []);
-                messagesCache = data.messages || {};
-                localStorage.setItem('trust_backup', JSON.stringify(data));
+            const serverData = (await r.json()).record;
+            if (serverData?.users) {
+                const localData = loadLocalDB();
+                const merged = {
+                    users: [...serverData.users, ...localData.users.filter(u => !serverData.users.find(s => norm(s.nick) === norm(u.nick)))],
+                    messages: { ...serverData.messages, ...localData.messages }
+                };
+                saveLocalDB(merged);
+                await fetch(API_URL, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
+                    body: JSON.stringify(merged),
+                    signal: AbortSignal.timeout(5000)
+                });
             }
         }
-    } catch(e) { console.warn('Сервер недоступен, использую кэш'); }
-    
-    return { users: Array.from(usersCache.values()), messages: messagesCache };
-}
-
-async function saveDB(data) {
-    if (!data) return;
-    usersCache = new Map(data.users?.map(u => [norm(u.nick), u]) || []);
-    messagesCache = data.messages || {};
-    localStorage.setItem('trust_backup', JSON.stringify(data));
-    
-    if (!API_URL) await initStorage();
-    if (!API_URL) return;
-    
-    try {
-        await fetch(API_URL, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
-            body: JSON.stringify(data),
-            signal: AbortSignal.timeout(3000)
-        });
     } catch(e) {}
-}
-
-function getUser(nick) {
-    return usersCache.get(norm(nick)) || null;
-}
-
-function getMessages(chatId) {
-    return messagesCache[chatId] || [];
 }
 
 function toBase64(arr) { return btoa(String.fromCharCode(...new Uint8Array(arr))); }
@@ -385,7 +353,7 @@ function decrypt(encoded, key) {
         return new TextDecoder().decode(result);
     } catch { return encoded; }
 }
-function getKey(a, b) { return [String(a||'').toLowerCase().trim(), String(b||'').toLowerCase().trim()].sort().join('_') + '_key'; }
+function getKey(a, b) { return [norm(a), norm(b)].sort().join('_') + '_key'; }
 
 function setLoading(btn, loading) {
     btn.disabled = loading;
@@ -394,7 +362,6 @@ function setLoading(btn, loading) {
 document.querySelectorAll('button[type="submit"]').forEach(b => b.setAttribute('data-text', b.textContent));
 $('sendBtn')?.setAttribute('data-text', '➤');
 
-// АВТОРИЗАЦИЯ
 $('tabLogin').onclick = () => showAuthTab('login');
 $('tabReg').onclick = () => showAuthTab('reg');
 function showAuthTab(tab) {
@@ -422,25 +389,26 @@ $('regForm').onsubmit = async (e) => {
     if (pass !== $('regPass2').value) { $('regError').textContent='Пароли не совпадают'; setLoading(btn, false); return; }
     if (nick.length < 3) { $('regError').textContent='Никнейм от 3'; setLoading(btn, false); return; }
     if (pass.length < 8) { $('regError').textContent='Пароль от 8'; setLoading(btn, false); return; }
-    if (getUser(nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; }
+    const db = loadLocalDB();
+    if (db.users.find(u => norm(u.nick)===nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; }
     const newUser = { nick, email, pass, avatar:'', avatarColor:themeColors[0], status:'В сети', bio:'', friends:[], verified: email===DEV_EMAIL, lastOnline: Date.now() };
-    usersCache.set(nick, newUser);
+    db.users.push(newUser);
+    saveLocalDB(db);
     me = newUser;
     localStorage.setItem('trust_session', JSON.stringify({nick, email}));
     setLoading(btn, false);
     showApp();
-    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
+    syncWithServer();
 };
 
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     const btn = $('loginBtn'); setLoading(btn, true);
     const nick = norm($('loginNick').value), email = norm($('loginEmail').value), pass = $('loginPass').value;
-    await loadDB();
-    const user = getUser(nick);
-    if (!user || norm(user.email) !== email || user.pass !== pass) {
-        $('loginError').textContent='Неверные данные'; setLoading(btn, false); return;
-    }
+    const db = loadLocalDB();
+    let user = db.users.find(u => norm(u.nick)===nick && norm(u.email)===email && u.pass===pass);
+    if (!user) { await syncWithServer(); const db2 = loadLocalDB(); user = db2.users.find(u => norm(u.nick)===nick && norm(u.email)===email && u.pass===pass); }
+    if (!user) { $('loginError').textContent='Неверные данные'; setLoading(btn, false); return; }
     me = user;
     localStorage.setItem('trust_session', JSON.stringify({nick: user.nick, email: user.email}));
     setLoading(btn, false);
@@ -453,12 +421,14 @@ $('resetForm').onsubmit = async (e) => {
     const nick = norm($('resetNick').value), email = norm($('resetEmail').value);
     const newPass = $('resetNewPass').value;
     if (newPass.length < 8) { $('resetError').textContent='Пароль от 8'; setLoading(btn, false); return; }
-    const user = getUser(nick);
-    if (!user || norm(user.email) !== email) { $('resetError').textContent='Не найден'; setLoading(btn, false); return; }
+    const db = loadLocalDB();
+    const user = db.users.find(u => norm(u.nick)===nick && norm(u.email)===email);
+    if (!user) { $('resetError').textContent='Не найден'; setLoading(btn, false); return; }
     user.pass = newPass;
-    setLoading(btn, false);
+    saveLocalDB(db);
     $('resetSuccess').textContent='Пароль изменён!';
-    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
+    setLoading(btn, false);
+    syncWithServer();
 };
 
 function showApp() {
@@ -472,6 +442,7 @@ function showApp() {
     $('messagesContainer').addEventListener('scroll', () => {
         userScrolledUp = $('messagesContainer').scrollHeight - $('messagesContainer').scrollTop - $('messagesContainer').clientHeight > 80;
     });
+    setInterval(syncWithServer, 30000);
 }
 
 function isOnline(user) { return user?.lastOnline && Date.now() - user.lastOnline < 120000; }
@@ -486,11 +457,6 @@ function updateUI() {
     });
     $('myName').innerHTML = me.nick + (me.verified ? '<span class="dev-badge">✓</span>' : '');
     $('myStatus').textContent = me.status;
-    $('profileNick').textContent = me.nick;
-    $('profileBio').textContent = me.bio || 'Не указано';
-    $('profileFriends').textContent = (me.friends||[]).length;
-    $('profileOnline').textContent = '🟢 Онлайн';
-    $('profileLastSeen').textContent = 'Сейчас';
     $('settingsNick').value = me.nick;
     $('settingsStatus').value = me.status;
     $('settingsBio').value = me.bio || '';
@@ -503,9 +469,10 @@ function updateUI() {
 function openProfile() { updateUI(); $('profilePanel').classList.add('open'); $('btnOpenChat').classList.add('hidden'); }
 function closeProfile() { $('profilePanel').classList.remove('open'); }
 
-async function viewProfile() {
+function viewProfile() {
     if (!activeChat) return;
-    const friend = getUser(activeChat);
+    const db = loadLocalDB();
+    const friend = db.users.find(u => norm(u.nick)===norm(activeChat));
     if (!friend) return;
     $('profileAvatar').style.backgroundImage = friend.avatar ? `url(${friend.avatar})` : 'none';
     $('profileAvatar').style.backgroundColor = friend.avatar ? 'transparent' : (friend.avatarColor||themeColors[0]);
@@ -522,10 +489,10 @@ async function viewProfile() {
 
 async function refresh() {
     if (!me) return;
-    await loadDB();
-    me = getUser(me.nick) || me;
+    const db = loadLocalDB();
+    me = db.users.find(u => norm(u.nick)===norm(me.nick)) || me;
     const chats = [], seen = new Set();
-    Object.entries(messagesCache).forEach(([id, msgs]) => {
+    Object.entries(db.messages||{}).forEach(([id, msgs]) => {
         if (id.includes(me.nick) && msgs.length) {
             const p = id.split('_').find(x => x!==me.nick);
             if (!seen.has(p)) { seen.add(p); const l=msgs[msgs.length-1]; chats.push({partner:p, last:l.file?'[Медиа]':(l.text||''), time:l.time}); }
@@ -538,7 +505,7 @@ async function refresh() {
     }
     chats.sort((a,b) => b.time - a.time);
     $('chatList').innerHTML = chats.length ? chats.map(c => {
-        const friend = getUser(c.partner);
+        const friend = db.users.find(u => norm(u.nick)===norm(c.partner));
         const online = isOnline(friend);
         return `<div class="chat-item ${activeChat===c.partner?'active':''}" data-p="${c.partner}">
             <div class="avatar" style="background:${friend?.avatarColor||'var(--accent)'};position:relative;">${c.partner[0].toUpperCase()}${online?'<div class="online-dot"></div>':''}</div>
@@ -559,7 +526,7 @@ function openChat(p) {
     $('partnerAvatar').style.backgroundImage = 'none'; $('partnerAvatar').style.backgroundColor = 'var(--accent)';
     if (p === 'ai_assistant') $('partnerStatus').textContent = '🤖 ИИ-помощник';
     else if (p === 'support') $('partnerStatus').textContent = '🛠️ Лог ошибок';
-    else { const f = getUser(p); $('partnerStatus').textContent = isOnline(f) ? '🟢 В сети' : '⚫ Не в сети'; }
+    else { const f = loadLocalDB().users.find(u => norm(u.nick)===norm(p)); $('partnerStatus').textContent = isOnline(f) ? '🟢 В сети' : '⚫ Не в сети'; }
     if (window.innerWidth <= 768) $('sidebar').classList.add('mobile-hidden');
     renderMessages();
 }
@@ -574,8 +541,9 @@ function closeChat() {
 
 function renderMessages() {
     if (!activeChat) return;
+    const db = loadLocalDB();
     const id = [me.nick, activeChat].sort().join('_');
-    const msgs = messagesCache[id] || [];
+    const msgs = (db.messages||{})[id] || [];
     const key = getKey(me.nick, activeChat);
     const wasNearBottom = !userScrolledUp;
     $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
@@ -594,29 +562,31 @@ function renderMessages() {
 
 async function sendMessage(text='', file=null, fileType='') {
     if (!activeChat) return;
+    const db = loadLocalDB();
     const id = [me.nick, activeChat].sort().join('_');
-    if (!messagesCache[id]) messagesCache[id] = [];
+    if (!db.messages) db.messages = {};
+    if (!db.messages[id]) db.messages[id] = [];
     const key = getKey(me.nick, activeChat);
     const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
-    messagesCache[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
+    db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
     if (activeChat === 'ai_assistant' && text) {
         const reply = generateAIReply(text);
-        messagesCache[id].push({from: 'ai_assistant', text: reply, time: Date.now()});
+        db.messages[id].push({from: 'ai_assistant', text: reply, time: Date.now()});
     }
+    saveLocalDB(db);
     pendingFile = null; $('previewBar').classList.add('hidden');
     userScrolledUp = false;
     renderMessages();
-    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
+    syncWithServer();
 }
 
 function generateAIReply(msg) {
     const lower = msg.toLowerCase();
     if (lower.includes('привет') || lower.includes('здравствуй')) return 'Привет! Я ИИ-помощник Доверия. Чем могу помочь?';
-    if (lower.includes('как дела')) return 'У меня всё отлично! Спасибо, что спросили.';
-    if (lower.includes('пока')) return 'До встречи! Если понадоблюсь — я здесь.';
-    if (lower.includes('спасибо')) return 'Пожалуйста! Обращайтесь ещё.';
-    if (lower.includes('помоги')) return 'Конечно! Опишите вашу проблему, и я постараюсь помочь.';
-    return 'Интересно! Расскажите подробнее, я слушаю.';
+    if (lower.includes('как дела')) return 'У меня всё отлично!';
+    if (lower.includes('пока')) return 'До встречи!';
+    if (lower.includes('спасибо')) return 'Пожалуйста!';
+    return 'Я слушаю. Расскажите подробнее.';
 }
 
 $('sendBtn').onclick = () => {
@@ -679,11 +649,12 @@ function updateAvatar() {
     reader.readAsDataURL(file);
 }
 
-async function searchUsers() {
+function searchUsers() {
     const q = norm($('friendNickInput').value);
     const sug = $('userSuggestions');
     if (q.length < 1) { sug.style.display='none'; return; }
-    const matches = Array.from(usersCache.values()).filter(u => norm(u.nick).includes(q) && norm(u.nick)!==norm(me.nick)).slice(0,5);
+    const db = loadLocalDB();
+    const matches = db.users.filter(u => norm(u.nick).includes(q) && norm(u.nick)!==norm(me.nick)).slice(0,5);
     sug.innerHTML = matches.length ? matches.map(u => `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}</div>`).join('') : '<div class="suggestion-item">Никого</div>';
     sug.style.display='block';
 }
@@ -697,30 +668,37 @@ function closeDevPanel() { $('devPanel').classList.remove('open'); }
 async function verifyUser() {
     const nick = norm($('devUserNick').value);
     if (!nick) return alert('Введите никнейм');
-    const user = getUser(nick);
+    const db = loadLocalDB();
+    const user = db.users.find(u => norm(u.nick)===nick);
     if (!user) return alert('Пользователь не найден');
     user.verified = true;
-    await saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
+    saveLocalDB(db);
     alert('✅ Галочка выдана!');
     refresh();
+    syncWithServer();
 }
 async function unverifyUser() {
     const nick = norm($('devUserNick').value);
     if (!nick) return alert('Введите никнейм');
-    const user = getUser(nick);
+    const db = loadLocalDB();
+    const user = db.users.find(u => norm(u.nick)===nick);
     if (!user) return alert('Пользователь не найден');
     user.verified = false;
-    await saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
+    saveLocalDB(db);
     alert('❌ Галочка убрана!');
     refresh();
+    syncWithServer();
 }
 
 $('btnSaveSettings').onclick = async () => {
+    const db = loadLocalDB();
+    const user = db.users.find(u => norm(u.nick)===norm(me.nick));
+    if (!user) return;
     const newNick = norm($('settingsNick').value);
-    if (newNick !== norm(me.nick) && getUser(newNick)) return alert('Никнейм занят');
+    if (newNick !== norm(me.nick) && db.users.find(u => norm(u.nick)===newNick)) return alert('Никнейм занят');
     const newPass = $('settingsPass').value;
     if (newPass && newPass.length < 8) return alert('Пароль от 8 символов');
-    Object.assign(me, {
+    Object.assign(user, {
         nick: newNick || me.nick,
         status: $('settingsStatus').value.trim() || 'В сети',
         bio: $('settingsBio').value.trim(),
@@ -728,12 +706,17 @@ $('btnSaveSettings').onclick = async () => {
         avatar: me.avatar,
         avatarColor: me.avatarColor
     });
-    if (newPass.length >= 8) me.pass = newPass;
-    usersCache.set(norm(me.nick), me);
-    if (newNick && newNick !== norm(me.nick)) usersCache.delete(norm(me.nick));
+    if (newPass.length >= 8) user.pass = newPass;
+    if (newNick && newNick !== norm(me.nick)) {
+        const oldNick = norm(me.nick);
+        const idx = db.users.findIndex(u => norm(u.nick)===oldNick);
+        if (idx!==-1) db.users[idx] = user;
+    }
+    saveLocalDB(db);
+    me = user;
     localStorage.setItem('trust_session', JSON.stringify({nick: me.nick, email: me.email}));
     updateUI(); closeSettings(); refresh();
-    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
+    syncWithServer();
 };
 
 $('btnLogout').onclick = () => { if(stream) stream.getTracks().forEach(t=>t.stop()); localStorage.removeItem('trust_session'); location.reload(); };
@@ -749,27 +732,30 @@ $('btnConfirmAddFriend').onclick = async () => {
     const nick = $('friendNickInput').value.trim();
     if (!nick) return $('addFriendError').textContent = 'Введите ник';
     if (norm(nick)===norm(me.nick)) return $('addFriendError').textContent = 'Это вы';
-    const friend = getUser(nick);
+    const db = loadLocalDB();
+    const friend = db.users.find(u => norm(u.nick)===norm(nick));
     if (!friend) return $('addFriendError').textContent = 'Не найден';
-    if (me.friends.includes(friend.nick)) return $('addFriendError').textContent = 'Уже в друзьях';
-    me.friends.push(friend.nick); friend.friends.push(me.nick);
+    const u = db.users.find(u => norm(u.nick)===norm(me.nick));
+    if (u.friends.includes(friend.nick)) return $('addFriendError').textContent = 'Уже в друзьях';
+    u.friends.push(friend.nick); friend.friends.push(me.nick);
+    saveLocalDB(db);
     $('addFriendSuccess').textContent = '✅ Добавлен!';
     setTimeout(() => { $('addFriendModal').classList.add('hidden'); refresh(); }, 800);
-    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
+    syncWithServer();
 };
 
 $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display='none'; });
 
-// Быстрый старт
 (async () => {
-    await loadDB();
     const saved = JSON.parse(localStorage.getItem('trust_session')||'null');
     if (saved) {
-        const u = getUser(saved.nick);
-        if (u && norm(u.email) === norm(saved.email)) { me = u; showApp(); }
+        const db = loadLocalDB();
+        const u = db.users.find(u => norm(u.nick)===norm(saved.nick) && norm(u.email)===norm(saved.email));
+        if (u) { me = u; showApp(); }
     }
+    syncWithServer();
 })();
 </script>
 </body>
