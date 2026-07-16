@@ -436,50 +436,58 @@ function renderMessages(db) {
     if (wasNearBottom) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
 }
 
-// ★ ИСПРАВЛЕНО: мгновенное добавление в DOM ★
+// ★ ПОЛНОСТЬЮ ПЕРЕПИСАННАЯ ОТПРАВКА ★
 async function sendMessage(text='', file=null, fileType='') {
     if (!activeChat || !me) return;
     const btn = $('sendBtn');
     setLoading(btn, true);
-
-    // 1. Сразу показываем сообщение локально
-    const tempId = 'temp_' + Date.now();
-    const msgHTML = `
-        <div class="msg own" id="${tempId}">
-            ${file ? `<div class="file-attachment"><div class="file-icon">📎</div><div class="file-info"><div class="file-name">Файл</div></div></div>` : ''}
-            ${text ? `<div>${text}</div>` : ''}
-            <div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>
-        </div>`;
-    $('messagesContainer').insertAdjacentHTML('beforeend', msgHTML);
-    $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
-
     try {
+        // 1. Загружаем актуальную базу
         const db = await loadDB();
+        // 2. Убеждаемся, что структура чата существует
         const id = [me.nick, activeChat].sort().join('_');
         if (!db.messages) db.messages = {};
         if (!db.messages[id]) db.messages[id] = [];
+        // 3. Шифруем текст если нужно
         const key = getKey(me.nick, activeChat);
         const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
-        db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
+        // 4. Добавляем сообщение в массив
+        const newMsg = {
+            from: me.nick,
+            text: msgText,
+            file: file,
+            fileType: fileType,
+            time: Date.now(),
+            encrypted: encryptionEnabled && !!text
+        };
+        db.messages[id].push(newMsg);
+        // 5. Сохраняем в JSONBin
         await saveDB(db);
-        // Удаляем временное сообщение
-        const tempEl = document.getElementById(tempId);
-        if (tempEl) tempEl.remove();
+        // 6. Очищаем интерфейс
         pendingFile = null;
         $('previewBar').classList.add('hidden');
+        $('messageInput').value = '';
         userScrolledUp = false;
-        await refresh(); // перерисовываем из базы
+        // 7. Принудительно обновляем чат (с загруженной базой)
+        if (activeChat) renderMessages(db);
+        // 8. Обновляем список чатов
+        refresh();
     } catch(e) {
-        alert('Ошибка: '+e.message);
-        const tempEl = document.getElementById(tempId);
-        if (tempEl) tempEl.remove();
+        alert('Ошибка отправки: ' + (e.message || 'Неизвестная ошибка'));
     } finally {
         setLoading(btn, false);
         if (pendingFile) cancelFile();
     }
 }
 
-$('sendBtn').onclick = () => { const text = $('messageInput').value.trim(); if (pendingFile) { sendMessage(text, pendingFile.data, pendingFile.type); $('messageInput').value = ''; } else if (text) { sendMessage(text); $('messageInput').value = ''; } };
+$('sendBtn').onclick = () => {
+    const text = $('messageInput').value.trim();
+    if (pendingFile) {
+        sendMessage(text, pendingFile.data, pendingFile.type);
+    } else if (text) {
+        sendMessage(text);
+    }
+};
 $('messageInput').onkeydown = e => { if (e.key==='Enter') $('sendBtn').click(); };
 
 async function handleFileSelect() { const file = $('fileInput').files[0]; if (!file) return; if (file.size>1024*1024) { alert('Файл слишком большой (макс. 1 МБ)'); return; } const reader = new FileReader(); reader.onload = () => { const type = file.type.startsWith('image/')?'image':file.type.startsWith('video/')?'video':file.type.startsWith('audio/')?'audio':'file'; pendingFile = { data: reader.result, type, name: file.name }; $('previewBar').innerHTML = `<span>${type==='image'?'🖼️':type==='video'?'🎬':type==='audio'?'🎵':'📎'} ${file.name}</span> <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`; $('previewBar').classList.remove('hidden'); }; reader.readAsDataURL(file); $('fileInput').value = ''; }
