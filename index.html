@@ -334,7 +334,13 @@ $('resetForm').onsubmit = async (e) => {
 function showApp() {
     $('authScreen').classList.add('hidden'); $('appScreen').classList.remove('hidden');
     applyTheme(me.avatarColor || themeColors[0]); updateUI(); updateOnlineStatus(); refresh();
-    refreshTimer = setInterval(refresh, 2000); onlineTimer = setInterval(updateOnlineStatus, 30000);
+    refreshTimer = setInterval(() => {
+        if (activeChat) {
+            loadDB().then(db => renderMessages(db));
+        }
+        refresh();
+    }, 1500);
+    onlineTimer = setInterval(updateOnlineStatus, 30000);
     $('messagesContainer').addEventListener('scroll', () => {
         userScrolledUp = $('messagesContainer').scrollHeight - $('messagesContainer').scrollTop - $('messagesContainer').clientHeight > 80;
     });
@@ -410,7 +416,6 @@ async function refresh() {
         return `<div class="chat-item ${activeChat===c.partner?'active':''}" data-p="${c.partner}"><div class="avatar" style="background:${friend?.avatarColor||'var(--accent)'};position:relative;">${c.partner[0].toUpperCase()}${online?'<div class="online-dot"></div>':''}${friend?.verified?'<div class="verified-badge">✔</div>':''}</div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">${c.partner}${friend?.verified?' <span style="color:#4ade80;">✔</span>':''}</div><div style="font-size:11px;color:var(--text3);">${(c.last||'').slice(0,30)}</div></div>${c.time?`<div style="font-size:10px;color:var(--text3);">${new Date(c.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>`:''}</div>`;
     }).join('') : '<div style="text-align:center;padding:30px;color:var(--text3)">Нет чатов</div>';
     document.querySelectorAll('.chat-item').forEach(el => el.onclick = () => openChat(el.dataset.p));
-    if (activeChat) renderMessages(db);
 }
 
 function openChat(p) { activeChat=p; userScrolledUp=false; $('emptyChat').classList.add('hidden'); $('chatHead').classList.remove('hidden'); $('messagesContainer').classList.remove('hidden'); $('inputArea').classList.remove('hidden'); $('partnerName').textContent=p; $('partnerAvatar').textContent=p[0].toUpperCase(); $('partnerAvatar').style.backgroundImage='none'; $('partnerAvatar').style.backgroundColor='var(--accent)'; const oldBadge = $('partnerAvatar').querySelector('.verified-badge'); if (oldBadge) oldBadge.remove(); loadDB().then(db => { const friend = db.users.find(u => norm(u.nick)===norm(p)); if (friend) { $('partnerStatus').textContent = isOnline(friend) ? '🟢 В сети' : '⚫ Не в сети'; if (friend.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✔'; $('partnerAvatar').style.position='relative'; $('partnerAvatar').appendChild(badge); } } }); if (window.innerWidth<=768) $('sidebar').classList.add('mobile-hidden'); refresh(); }
@@ -436,44 +441,30 @@ function renderMessages(db) {
     if (wasNearBottom) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
 }
 
-// ★ ПОЛНОСТЬЮ ПЕРЕПИСАННАЯ ОТПРАВКА ★
+// ★ ГАРАНТИРОВАННАЯ ОТПРАВКА ★
 async function sendMessage(text='', file=null, fileType='') {
     if (!activeChat || !me) return;
     const btn = $('sendBtn');
     setLoading(btn, true);
     try {
-        // 1. Загружаем актуальную базу
         const db = await loadDB();
-        // 2. Убеждаемся, что структура чата существует
         const id = [me.nick, activeChat].sort().join('_');
         if (!db.messages) db.messages = {};
         if (!db.messages[id]) db.messages[id] = [];
-        // 3. Шифруем текст если нужно
         const key = getKey(me.nick, activeChat);
         const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
-        // 4. Добавляем сообщение в массив
-        const newMsg = {
-            from: me.nick,
-            text: msgText,
-            file: file,
-            fileType: fileType,
-            time: Date.now(),
-            encrypted: encryptionEnabled && !!text
-        };
-        db.messages[id].push(newMsg);
-        // 5. Сохраняем в JSONBin
+        db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
         await saveDB(db);
-        // 6. Очищаем интерфейс
         pendingFile = null;
         $('previewBar').classList.add('hidden');
         $('messageInput').value = '';
         userScrolledUp = false;
-        // 7. Принудительно обновляем чат (с загруженной базой)
-        if (activeChat) renderMessages(db);
-        // 8. Обновляем список чатов
-        refresh();
+        // Сразу рендерим сообщения из обновлённой базы
+        await renderMessages(db);
+        // Обновляем список чатов
+        await refresh();
     } catch(e) {
-        alert('Ошибка отправки: ' + (e.message || 'Неизвестная ошибка'));
+        alert('Ошибка: ' + (e.message || 'Неизвестная ошибка'));
     } finally {
         setLoading(btn, false);
         if (pendingFile) cancelFile();
