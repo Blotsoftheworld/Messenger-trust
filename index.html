@@ -14,7 +14,7 @@
         }
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #000; color: var(--text); height: 100dvh; overflow: hidden; display: flex; }
-        
+
         #authScreen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, #1a0d2e, #080311); z-index: 100; }
         #authScreen.hidden { display: none; }
         .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 20px; padding: clamp(16px, 4vw, 25px); width: min(400px, 92vw); text-align: center; box-shadow: 0 4px 30px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto; }
@@ -37,7 +37,7 @@
         .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
         @keyframes spin { to { transform: rotate(360deg); } }
         .dev-badge { background: var(--dev); color: #000; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 6px; font-weight: 700; }
-        
+
         #appScreen { display: flex; width: 100vw; height: 100dvh; }
         #appScreen.hidden { display: none; }
         .sidebar { width: 320px; min-width: 320px; background: var(--bg3); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
@@ -64,18 +64,18 @@
         .icon-btn { width: 34px; height: 34px; border-radius: 50%; background: var(--input); border: none; color: var(--text2); cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .icon-btn.send { background: var(--accent); color: #fff; }
         .preview-bar { padding: 6px 10px; background: var(--bg2); border-top: 1px solid var(--border); display: flex; align-items: center; gap: 8px; font-size: 12px; }
-        
+
         .settings-panel, .profile-panel, .dev-panel { position: fixed; top: 0; right: -100%; width: min(400px, 90vw); height: 100dvh; background: var(--bg2); border-left: 1px solid var(--border); z-index: 50; transition: right 0.3s; display: flex; flex-direction: column; overflow-y: auto; }
         .settings-panel.open, .profile-panel.open, .dev-panel.open { right: 0; }
         .settings-section, .profile-section { padding: 14px; border-bottom: 1px solid var(--border); }
         .color-row { display: flex; gap: 6px; flex-wrap: wrap; }
         .color-dot { width: 28px; height: 28px; border-radius: 50%; cursor: pointer; border: 3px solid transparent; transition: 0.2s; }
         .color-dot.selected { border-color: #fff; transform: scale(1.1); }
-        
+
         .modal { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 200; }
         .modal.hidden { display: none; }
         .hidden { display: none !important; }
-        
+
         @media (max-width: 768px) {
             .sidebar { position: absolute; z-index: 30; width: 100%; min-width: 100%; height: 100dvh; }
             .sidebar.mobile-hidden { display: none; }
@@ -269,35 +269,100 @@
 <script>
 const $ = id => document.getElementById(id);
 const API_KEY = '$2a$10$KiP/8lAd8kH3cgOTTCiUpOAR.vGUj7Nz23lSGU4Z2udjUG8GycMmG';
-const BIN_ID = '6a550b47da38895dfe57a6ca';
-const API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
 const DEV_EMAIL = 'logunov2512@gmail.com';
+let BIN_ID = localStorage.getItem('trust_bin_id') || '';
+let API_URL = BIN_ID ? `https://api.jsonbin.io/v3/b/${BIN_ID}` : '';
 
-let me = null, activeChat = null, refreshTimer = null, onlineTimer = null;
+let me = null, activeChat = null, refreshTimer = null;
 let mediaRecorder = null, audioChunks = [], stream = null;
 let pendingFile = null, encryptionEnabled = true, userScrolledUp = false;
 const themeColors = ['#8b5cf6','#ec4899','#f59e0b','#3b82f6','#10b981','#ef4444','#6366f1','#14b8a6'];
 const errorLogs = [];
 
-function logError(msg) {
-    errorLogs.push({ time: new Date().toISOString(), msg });
-    if (errorLogs.length > 50) errorLogs.shift();
-    updateErrorLog();
-    // Авто-отправка разработчику
-    if (me && norm(me.email) === norm(DEV_EMAIL)) {
-        const supportChatId = ['support', norm(DEV_EMAIL)].sort().join('_');
-        loadDB().then(db => {
-            if (!db.messages) db.messages = {};
-            if (!db.messages[supportChatId]) db.messages[supportChatId] = [];
-            db.messages[supportChatId].push({ from: 'system', text: `[Ошибка] ${msg}`, time: Date.now() });
-            saveDB(db);
+// Быстрый доступ к данным через Map
+let usersCache = new Map();
+let messagesCache = {};
+
+function norm(s) { return String(s||'').toLowerCase().trim(); }
+
+// Инициализация хранилища при загрузке
+async function initStorage() {
+    if (BIN_ID && API_URL) return true;
+    try {
+        const r = await fetch('https://api.jsonbin.io/v3/b', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY, 'X-Bin-Name': 'trust_db' },
+            body: JSON.stringify({ users: [], messages: {} })
         });
-    }
+        if (r.ok) {
+            const data = await r.json();
+            BIN_ID = data.metadata.id;
+            API_URL = `https://api.jsonbin.io/v3/b/${BIN_ID}`;
+            localStorage.setItem('trust_bin_id', BIN_ID);
+            return true;
+        }
+    } catch(e) { console.warn('Не удалось создать хранилище'); }
+    return false;
 }
 
-function updateErrorLog() {
-    const logDiv = $('errorLog');
-    if (logDiv) logDiv.innerHTML = errorLogs.slice(-20).map(e => `<div style="margin-bottom:4px;"><b>${new Date(e.time).toLocaleTimeString()}</b> ${e.msg}</div>`).join('');
+async function loadDB() {
+    // Сначала загружаем из локального кэша для мгновенного отображения
+    try {
+        const cached = JSON.parse(localStorage.getItem('trust_backup'));
+        if (cached) {
+            usersCache = new Map(cached.users?.map(u => [norm(u.nick), u]) || []);
+            messagesCache = cached.messages || {};
+        }
+    } catch {}
+    
+    // Затем синхронизируем с сервером
+    if (!API_URL && !await initStorage()) {
+        return { users: Array.from(usersCache.values()), messages: messagesCache };
+    }
+    
+    try {
+        const r = await fetch(API_URL + '/latest', { 
+            headers: { 'X-Master-Key': API_KEY },
+            signal: AbortSignal.timeout(3000)
+        });
+        if (r.ok) {
+            const data = (await r.json()).record;
+            if (data) {
+                usersCache = new Map(data.users?.map(u => [norm(u.nick), u]) || []);
+                messagesCache = data.messages || {};
+                localStorage.setItem('trust_backup', JSON.stringify(data));
+            }
+        }
+    } catch(e) { console.warn('Сервер недоступен, использую кэш'); }
+    
+    return { users: Array.from(usersCache.values()), messages: messagesCache };
+}
+
+async function saveDB(data) {
+    if (!data) return;
+    usersCache = new Map(data.users?.map(u => [norm(u.nick), u]) || []);
+    messagesCache = data.messages || {};
+    localStorage.setItem('trust_backup', JSON.stringify(data));
+    
+    if (!API_URL) await initStorage();
+    if (!API_URL) return;
+    
+    try {
+        await fetch(API_URL, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
+            body: JSON.stringify(data),
+            signal: AbortSignal.timeout(3000)
+        });
+    } catch(e) {}
+}
+
+function getUser(nick) {
+    return usersCache.get(norm(nick)) || null;
+}
+
+function getMessages(chatId) {
+    return messagesCache[chatId] || [];
 }
 
 function toBase64(arr) { return btoa(String.fromCharCode(...new Uint8Array(arr))); }
@@ -321,24 +386,6 @@ function decrypt(encoded, key) {
     } catch { return encoded; }
 }
 function getKey(a, b) { return [String(a||'').toLowerCase().trim(), String(b||'').toLowerCase().trim()].sort().join('_') + '_key'; }
-function norm(s) { return String(s||'').toLowerCase().trim(); }
-
-async function loadDB() {
-    try {
-        const r = await fetch(API_URL + '/latest', { headers: { 'X-Master-Key': API_KEY } });
-        if (!r.ok) throw new Error('Ошибка загрузки');
-        const data = (await r.json()).record;
-        if (data) { localStorage.setItem('trust_backup', JSON.stringify(data)); return data; }
-    } catch(e) { logError('Сервер недоступен: ' + e.message); }
-    try { return JSON.parse(localStorage.getItem('trust_backup') || '{"users":[],"messages":{}}'); }
-    catch { return { users: [], messages: {} }; }
-}
-async function saveDB(data) {
-    if (!data?.users) return;
-    localStorage.setItem('trust_backup', JSON.stringify(data));
-    try { await fetch(API_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY }, body: JSON.stringify(data) }); }
-    catch(e) { logError('Ошибка сохранения: ' + e.message); }
-}
 
 function setLoading(btn, loading) {
     btn.disabled = loading;
@@ -375,25 +422,25 @@ $('regForm').onsubmit = async (e) => {
     if (pass !== $('regPass2').value) { $('regError').textContent='Пароли не совпадают'; setLoading(btn, false); return; }
     if (nick.length < 3) { $('regError').textContent='Никнейм от 3'; setLoading(btn, false); return; }
     if (pass.length < 8) { $('regError').textContent='Пароль от 8'; setLoading(btn, false); return; }
-    const db = await loadDB();
-    if (db.users.find(u => norm(u.nick)===nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; }
+    if (getUser(nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; }
     const newUser = { nick, email, pass, avatar:'', avatarColor:themeColors[0], status:'В сети', bio:'', friends:[], verified: email===DEV_EMAIL, lastOnline: Date.now() };
-    db.users.push(newUser);
-    await saveDB(db);
+    usersCache.set(nick, newUser);
     me = newUser;
     localStorage.setItem('trust_session', JSON.stringify({nick, email}));
     setLoading(btn, false);
     showApp();
+    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
 };
 
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault();
     const btn = $('loginBtn'); setLoading(btn, true);
     const nick = norm($('loginNick').value), email = norm($('loginEmail').value), pass = $('loginPass').value;
-    let db = await loadDB();
-    let user = db.users.find(u => norm(u.nick)===nick && norm(u.email)===email && u.pass===pass);
-    if (!user) { await new Promise(r => setTimeout(r, 1500)); db = await loadDB(); user = db.users.find(u => norm(u.nick)===nick && norm(u.email)===email && u.pass===pass); }
-    if (!user) { $('loginError').textContent='Неверные данные'; setLoading(btn, false); return; }
+    await loadDB();
+    const user = getUser(nick);
+    if (!user || norm(user.email) !== email || user.pass !== pass) {
+        $('loginError').textContent='Неверные данные'; setLoading(btn, false); return;
+    }
     me = user;
     localStorage.setItem('trust_session', JSON.stringify({nick: user.nick, email: user.email}));
     setLoading(btn, false);
@@ -406,13 +453,12 @@ $('resetForm').onsubmit = async (e) => {
     const nick = norm($('resetNick').value), email = norm($('resetEmail').value);
     const newPass = $('resetNewPass').value;
     if (newPass.length < 8) { $('resetError').textContent='Пароль от 8'; setLoading(btn, false); return; }
-    const db = await loadDB();
-    const idx = db.users.findIndex(u => norm(u.nick)===nick && norm(u.email)===email);
-    if (idx===-1) { $('resetError').textContent='Не найден'; setLoading(btn, false); return; }
-    db.users[idx].pass = newPass;
-    await saveDB(db);
-    $('resetSuccess').textContent='Пароль изменён!';
+    const user = getUser(nick);
+    if (!user || norm(user.email) !== email) { $('resetError').textContent='Не найден'; setLoading(btn, false); return; }
+    user.pass = newPass;
     setLoading(btn, false);
+    $('resetSuccess').textContent='Пароль изменён!';
+    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
 };
 
 function showApp() {
@@ -421,25 +467,14 @@ function showApp() {
     if (norm(me.email) === norm(DEV_EMAIL)) $('btnDevPanel').style.display = 'flex';
     applyTheme(me.avatarColor || themeColors[0]);
     updateUI();
-    updateOnlineStatus();
     refresh();
-    refreshTimer = setInterval(refresh, 2500);
-    onlineTimer = setInterval(updateOnlineStatus, 30000);
+    refreshTimer = setInterval(refresh, 3000);
     $('messagesContainer').addEventListener('scroll', () => {
         userScrolledUp = $('messagesContainer').scrollHeight - $('messagesContainer').scrollTop - $('messagesContainer').clientHeight > 80;
     });
 }
 
-function updateOnlineStatus() {
-    if (!me) return;
-    me.lastOnline = Date.now();
-    loadDB().then(db => {
-        const idx = db.users.findIndex(u => norm(u.nick)===norm(me.nick));
-        if (idx!==-1) { db.users[idx].lastOnline = me.lastOnline; saveDB(db); }
-    });
-}
-
-function isOnline(user) { return user?.lastOnline && Date.now() - user.lastOnline < 60000; }
+function isOnline(user) { return user?.lastOnline && Date.now() - user.lastOnline < 120000; }
 function applyTheme(color) { document.documentElement.style.setProperty('--accent', color); document.documentElement.style.setProperty('--msg-own', color); }
 
 function updateUI() {
@@ -470,8 +505,7 @@ function closeProfile() { $('profilePanel').classList.remove('open'); }
 
 async function viewProfile() {
     if (!activeChat) return;
-    const db = await loadDB();
-    const friend = db.users.find(u => norm(u.nick)===norm(activeChat));
+    const friend = getUser(activeChat);
     if (!friend) return;
     $('profileAvatar').style.backgroundImage = friend.avatar ? `url(${friend.avatar})` : 'none';
     $('profileAvatar').style.backgroundColor = friend.avatar ? 'transparent' : (friend.avatarColor||themeColors[0]);
@@ -488,24 +522,23 @@ async function viewProfile() {
 
 async function refresh() {
     if (!me) return;
-    const db = await loadDB();
-    me = db.users.find(u => norm(u.nick)===norm(me.nick)) || me;
+    await loadDB();
+    me = getUser(me.nick) || me;
     const chats = [], seen = new Set();
-    Object.entries(db.messages||{}).forEach(([id, msgs]) => {
+    Object.entries(messagesCache).forEach(([id, msgs]) => {
         if (id.includes(me.nick) && msgs.length) {
             const p = id.split('_').find(x => x!==me.nick);
             if (!seen.has(p)) { seen.add(p); const l=msgs[msgs.length-1]; chats.push({partner:p, last:l.file?'[Медиа]':(l.text||''), time:l.time}); }
         }
     });
     (me.friends||[]).forEach(f => { if (!seen.has(f)) chats.push({partner:f, last:'Начните общение!', time:0}); });
-    // Добавляем чат поддержки и ИИ для разработчика
     if (norm(me.email) === norm(DEV_EMAIL)) {
         if (!seen.has('support')) chats.push({partner:'support', last:'Лог ошибок', time:Date.now()});
         if (!seen.has('ai_assistant')) chats.push({partner:'ai_assistant', last:'ИИ-помощник', time:Date.now()});
     }
     chats.sort((a,b) => b.time - a.time);
     $('chatList').innerHTML = chats.length ? chats.map(c => {
-        const friend = db.users.find(u => norm(u.nick)===norm(c.partner));
+        const friend = getUser(c.partner);
         const online = isOnline(friend);
         return `<div class="chat-item ${activeChat===c.partner?'active':''}" data-p="${c.partner}">
             <div class="avatar" style="background:${friend?.avatarColor||'var(--accent)'};position:relative;">${c.partner[0].toUpperCase()}${online?'<div class="online-dot"></div>':''}</div>
@@ -514,28 +547,21 @@ async function refresh() {
         </div>`;
     }).join('') : '<div style="text-align:center;padding:30px;color:var(--text3)">Нет чатов</div>';
     document.querySelectorAll('.chat-item').forEach(el => el.onclick = () => openChat(el.dataset.p));
-    if (activeChat) renderMessages(db);
+    if (activeChat) renderMessages();
 }
 
 function openChat(p) {
     activeChat = p; userScrolledUp = false;
     $('emptyChat').classList.add('hidden'); $('chatHead').classList.remove('hidden');
     $('messagesContainer').classList.remove('hidden'); $('inputArea').classList.remove('hidden');
-    $('partnerName').innerHTML = p;
+    $('partnerName').textContent = p;
     $('partnerAvatar').textContent = p[0].toUpperCase();
     $('partnerAvatar').style.backgroundImage = 'none'; $('partnerAvatar').style.backgroundColor = 'var(--accent)';
-    if (p === 'ai_assistant') {
-        $('partnerStatus').textContent = '🤖 ИИ-помощник';
-    } else if (p === 'support') {
-        $('partnerStatus').textContent = '🛠️ Лог ошибок';
-    } else {
-        loadDB().then(db => {
-            const friend = db.users.find(u => norm(u.nick)===norm(p));
-            $('partnerStatus').textContent = isOnline(friend) ? '🟢 В сети' : '⚫ Не в сети';
-        });
-    }
+    if (p === 'ai_assistant') $('partnerStatus').textContent = '🤖 ИИ-помощник';
+    else if (p === 'support') $('partnerStatus').textContent = '🛠️ Лог ошибок';
+    else { const f = getUser(p); $('partnerStatus').textContent = isOnline(f) ? '🟢 В сети' : '⚫ Не в сети'; }
     if (window.innerWidth <= 768) $('sidebar').classList.add('mobile-hidden');
-    refresh();
+    renderMessages();
 }
 
 function closeChat() {
@@ -546,10 +572,10 @@ function closeChat() {
     $('previewBar').classList.add('hidden');
 }
 
-async function renderMessages(db) {
+function renderMessages() {
     if (!activeChat) return;
     const id = [me.nick, activeChat].sort().join('_');
-    const msgs = (db.messages||{})[id] || [];
+    const msgs = messagesCache[id] || [];
     const key = getKey(me.nick, activeChat);
     const wasNearBottom = !userScrolledUp;
     $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
@@ -568,36 +594,28 @@ async function renderMessages(db) {
 
 async function sendMessage(text='', file=null, fileType='') {
     if (!activeChat) return;
-    const btn = $('sendBtn'); setLoading(btn, true);
-    try {
-        const db = await loadDB();
-        const id = [me.nick, activeChat].sort().join('_');
-        if (!db.messages) db.messages = {};
-        if (!db.messages[id]) db.messages[id] = [];
-        const key = getKey(me.nick, activeChat);
-        let msgText = text && encryptionEnabled ? encrypt(text, key) : text;
-        db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
-        // Ответ ИИ-помощника
-        if (activeChat === 'ai_assistant' && text) {
-            const reply = generateAIReply(text);
-            db.messages[id].push({from: 'ai_assistant', text: reply, time: Date.now()});
-        }
-        await saveDB(db);
-        pendingFile = null; $('previewBar').classList.add('hidden');
-        userScrolledUp = false;
-        refresh();
-    } catch(e) { logError('Ошибка отправки: ' + e.message); alert('Ошибка: '+e.message); }
-    finally { setLoading(btn, false); if (pendingFile) cancelFile(); }
+    const id = [me.nick, activeChat].sort().join('_');
+    if (!messagesCache[id]) messagesCache[id] = [];
+    const key = getKey(me.nick, activeChat);
+    const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
+    messagesCache[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
+    if (activeChat === 'ai_assistant' && text) {
+        const reply = generateAIReply(text);
+        messagesCache[id].push({from: 'ai_assistant', text: reply, time: Date.now()});
+    }
+    pendingFile = null; $('previewBar').classList.add('hidden');
+    userScrolledUp = false;
+    renderMessages();
+    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
 }
 
 function generateAIReply(msg) {
     const lower = msg.toLowerCase();
     if (lower.includes('привет') || lower.includes('здравствуй')) return 'Привет! Я ИИ-помощник Доверия. Чем могу помочь?';
-    if (lower.includes('как дела') || lower.includes('как ты')) return 'У меня всё отлично! Спасибо, что спросили.';
-    if (lower.includes('пока') || lower.includes('до свидания')) return 'До встречи! Если понадоблюсь — я здесь.';
+    if (lower.includes('как дела')) return 'У меня всё отлично! Спасибо, что спросили.';
+    if (lower.includes('пока')) return 'До встречи! Если понадоблюсь — я здесь.';
     if (lower.includes('спасибо')) return 'Пожалуйста! Обращайтесь ещё.';
-    if (lower.includes('помоги') || lower.includes('помощь')) return 'Конечно! Опишите вашу проблему, и я постараюсь помочь.';
-    if (lower.includes('кто ты') || lower.includes('что ты')) return 'Я ИИ-помощник мессенджера Доверие. Могу ответить на вопросы и помочь с навигацией.';
+    if (lower.includes('помоги')) return 'Конечно! Опишите вашу проблему, и я постараюсь помочь.';
     return 'Интересно! Расскажите подробнее, я слушаю.';
 }
 
@@ -665,8 +683,7 @@ async function searchUsers() {
     const q = norm($('friendNickInput').value);
     const sug = $('userSuggestions');
     if (q.length < 1) { sug.style.display='none'; return; }
-    const db = await loadDB();
-    const matches = db.users.filter(u => norm(u.nick).includes(q) && norm(u.nick)!==norm(me.nick)).slice(0,5);
+    const matches = Array.from(usersCache.values()).filter(u => norm(u.nick).includes(q) && norm(u.nick)!==norm(me.nick)).slice(0,5);
     sug.innerHTML = matches.length ? matches.map(u => `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}</div>`).join('') : '<div class="suggestion-item">Никого</div>';
     sug.style.display='block';
 }
@@ -674,46 +691,49 @@ function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestion
 
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
 function closeSettings() { $('settingsPanel').classList.remove('open'); }
-function openDevPanel() { updateErrorLog(); $('devPanel').classList.add('open'); }
+function openDevPanel() { $('devPanel').classList.add('open'); }
 function closeDevPanel() { $('devPanel').classList.remove('open'); }
 
 async function verifyUser() {
     const nick = norm($('devUserNick').value);
     if (!nick) return alert('Введите никнейм');
-    const db = await loadDB();
-    const idx = db.users.findIndex(u => norm(u.nick)===nick);
-    if (idx===-1) return alert('Пользователь не найден');
-    db.users[idx].verified = true;
-    await saveDB(db);
+    const user = getUser(nick);
+    if (!user) return alert('Пользователь не найден');
+    user.verified = true;
+    await saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
     alert('✅ Галочка выдана!');
     refresh();
 }
 async function unverifyUser() {
     const nick = norm($('devUserNick').value);
     if (!nick) return alert('Введите никнейм');
-    const db = await loadDB();
-    const idx = db.users.findIndex(u => norm(u.nick)===nick);
-    if (idx===-1) return alert('Пользователь не найден');
-    db.users[idx].verified = false;
-    await saveDB(db);
+    const user = getUser(nick);
+    if (!user) return alert('Пользователь не найден');
+    user.verified = false;
+    await saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
     alert('❌ Галочка убрана!');
     refresh();
 }
 
 $('btnSaveSettings').onclick = async () => {
-    const db = await loadDB();
-    const idx = db.users.findIndex(u => norm(u.nick)===norm(me.nick));
-    if (idx===-1) return;
     const newNick = norm($('settingsNick').value);
-    if (newNick !== norm(me.nick) && db.users.find(u => norm(u.nick)===newNick)) return alert('Никнейм занят');
+    if (newNick !== norm(me.nick) && getUser(newNick)) return alert('Никнейм занят');
     const newPass = $('settingsPass').value;
     if (newPass && newPass.length < 8) return alert('Пароль от 8 символов');
-    db.users[idx] = {...db.users[idx], nick: newNick||me.nick, status: $('settingsStatus').value.trim()||'В сети', bio: $('settingsBio').value.trim(), email: norm($('settingsEmail').value)||me.email, avatar: me.avatar, avatarColor: me.avatarColor, lastOnline: Date.now()};
-    if (newPass.length >= 8) db.users[idx].pass = newPass;
-    await saveDB(db);
-    me = db.users[idx];
+    Object.assign(me, {
+        nick: newNick || me.nick,
+        status: $('settingsStatus').value.trim() || 'В сети',
+        bio: $('settingsBio').value.trim(),
+        email: norm($('settingsEmail').value) || me.email,
+        avatar: me.avatar,
+        avatarColor: me.avatarColor
+    });
+    if (newPass.length >= 8) me.pass = newPass;
+    usersCache.set(norm(me.nick), me);
+    if (newNick && newNick !== norm(me.nick)) usersCache.delete(norm(me.nick));
     localStorage.setItem('trust_session', JSON.stringify({nick: me.nick, email: me.email}));
     updateUI(); closeSettings(); refresh();
+    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
 };
 
 $('btnLogout').onclick = () => { if(stream) stream.getTracks().forEach(t=>t.stop()); localStorage.removeItem('trust_session'); location.reload(); };
@@ -729,27 +749,26 @@ $('btnConfirmAddFriend').onclick = async () => {
     const nick = $('friendNickInput').value.trim();
     if (!nick) return $('addFriendError').textContent = 'Введите ник';
     if (norm(nick)===norm(me.nick)) return $('addFriendError').textContent = 'Это вы';
-    const db = await loadDB();
-    const friend = db.users.find(u => norm(u.nick)===norm(nick));
+    const friend = getUser(nick);
     if (!friend) return $('addFriendError').textContent = 'Не найден';
-    const u = db.users.find(u => norm(u.nick)===norm(me.nick));
-    if (u.friends.includes(friend.nick)) return $('addFriendError').textContent = 'Уже в друзьях';
-    u.friends.push(friend.nick); friend.friends.push(me.nick);
-    await saveDB(db);
+    if (me.friends.includes(friend.nick)) return $('addFriendError').textContent = 'Уже в друзьях';
+    me.friends.push(friend.nick); friend.friends.push(me.nick);
     $('addFriendSuccess').textContent = '✅ Добавлен!';
     setTimeout(() => { $('addFriendModal').classList.add('hidden'); refresh(); }, 800);
+    saveDB({ users: Array.from(usersCache.values()), messages: messagesCache });
 };
 
 $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display='none'; });
 
+// Быстрый старт
 (async () => {
+    await loadDB();
     const saved = JSON.parse(localStorage.getItem('trust_session')||'null');
     if (saved) {
-        const db = await loadDB();
-        const u = db.users.find(u => norm(u.nick)===norm(saved.nick) && norm(u.email)===norm(saved.email));
-        if (u) { me = u; showApp(); }
+        const u = getUser(saved.nick);
+        if (u && norm(u.email) === norm(saved.email)) { me = u; showApp(); }
     }
 })();
 </script>
