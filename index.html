@@ -79,17 +79,12 @@
         .tg-link { color: #fff; background: #2AABEE; padding: 12px 18px; border-radius: 10px; text-decoration: none; display: block; margin: 6px 0; font-weight: 600; text-align: center; }
         .verify-btn { background: #2ecc71; color: #000; padding: 8px 16px; border-radius: 10px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; margin: 4px; }
         .unverify-btn { background: #e74c3c; color: #fff; padding: 8px 16px; border-radius: 10px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; margin: 4px; }
-        @media (max-width: 768px) {
-            .sidebar { position: absolute; z-index: 30; width: 100%; min-width: 100%; height: 100dvh; }
-            .sidebar.mobile-hidden { display: none; }
-            .back-btn-mobile { display: flex !important; }
-        }
+        @media (max-width: 768px) { .sidebar { position: absolute; z-index: 30; width: 100%; min-width: 100%; height: 100dvh; } .sidebar.mobile-hidden { display: none; } .back-btn-mobile { display: flex !important; } }
         .back-btn-mobile { display: none; width: 32px; height: 32px; border-radius: 50%; background: var(--input); border: none; color: var(--text2); cursor: pointer; align-items: center; justify-content: center; font-size: 15px; margin-right: 6px; flex-shrink: 0; }
     </style>
 </head>
 <body>
 
-<!-- АВТОРИЗАЦИЯ -->
 <div id="authScreen">
     <div class="card">
         <div style="font-size:32px;">🔐</div>
@@ -129,7 +124,6 @@
     </div>
 </div>
 
-<!-- ОСНОВНОЙ ИНТЕРФЕЙС -->
 <div id="appScreen" class="hidden">
     <div class="sidebar" id="sidebar">
         <div class="sidebar-head">
@@ -160,7 +154,6 @@
     </div>
 </div>
 
-<!-- ПРОФИЛЬ -->
 <div class="profile-panel" id="profilePanel">
     <div style="padding:14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between"><h3>Профиль</h3><button style="background:none;border:none;color:var(--text);font-size:20px;cursor:pointer" onclick="closeProfile()">✕</button></div>
     <div class="profile-section" style="text-align:center"><div class="avatar" id="profileAvatar" style="width:80px;height:80px;font-size:30px;margin:0 auto;"></div><h3 id="profileNick" style="margin-top:12px;"></h3></div>
@@ -168,7 +161,6 @@
     <div style="padding:16px;"><button id="btnOpenChat" style="width:100%;">Написать</button></div>
 </div>
 
-<!-- НАСТРОЙКИ -->
 <div class="settings-panel" id="settingsPanel">
     <div style="padding:14px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between"><h3>Настройки</h3><button style="background:none;border:none;color:var(--text);font-size:20px;cursor:pointer" onclick="closeSettings()">✕</button></div>
     <div class="settings-section" style="text-align:center"><label for="avatarFileInput" style="cursor:pointer"><div class="avatar" id="settingsAvatar" style="width:70px;height:70px;font-size:28px;margin:0 auto">?</div></label><input type="file" id="avatarFileInput" accept="image/*" onchange="updateAvatar()" hidden></div>
@@ -179,7 +171,6 @@
     <div style="padding:16px;display:flex;flex-direction:column;gap:8px"><button id="btnSaveSettings">Сохранить</button><button id="btnLogout" style="background:var(--red)">Выйти</button></div>
 </div>
 
-<!-- МОДАЛКИ -->
 <div class="modal hidden" id="addFriendModal"><div class="card"><h3>Добавить друга</h3><div style="position:relative;"><input id="friendNickInput" placeholder="Никнейм" oninput="searchUsers()" onfocus="searchUsers()"><div class="suggestions" id="userSuggestions"></div></div><div class="error" id="addFriendError"></div><div class="success" id="addFriendSuccess"></div><button id="btnConfirmAddFriend" style="margin-top:10px;">Добавить</button><button id="btnCancelAddFriend" style="background:none;border:2px solid var(--border);margin-top:8px">Отмена</button></div></div>
 <div class="modal hidden" id="donateModal"><div class="card"><h3>Поддержать проект</h3><p style="color:var(--text2);margin:12px 0;">Напишите нам в Telegram:</p><a href="https://t.me/Blotsoftheworld" target="_blank" class="tg-link">@Blotsoftheworld</a><a href="https://t.me/Eruaxis" target="_blank" class="tg-link">@Eruaxis</a><button onclick="$('donateModal').classList.add('hidden')" style="margin-top:10px;width:100%;">Закрыть</button></div></div>
 
@@ -205,6 +196,7 @@ $('tabReg').onclick = () => { $('tabReg').classList.add('active'); $('tabLogin')
 $('forgotPassBtn').onclick = () => { $('tabLogin').style.display='none'; $('tabReg').style.display='none'; $('tabReset').style.display='block'; $('tabReset').classList.add('active'); $('loginForm').classList.remove('active'); $('regForm').classList.remove('active'); $('resetForm').classList.add('active'); };
 $('backToLogin').onclick = () => { $('tabLogin').style.display='block'; $('tabReg').style.display='block'; $('tabReset').style.display='none'; $('tabLogin').classList.add('active'); $('loginForm').classList.add('active'); $('regForm').classList.remove('active'); $('resetForm').classList.remove('active'); };
 
+// РЕГИСТРАЦИЯ
 $('regForm').onsubmit = async (e) => {
     e.preventDefault(); $('regError').textContent = '';
     const nick = norm($('regNick').value), email = norm($('regEmail').value);
@@ -212,22 +204,29 @@ $('regForm').onsubmit = async (e) => {
     if (pass !== pass2) return $('regError').textContent = 'Пароли не совпадают';
     if (nick.length < 3) return $('regError').textContent = 'Никнейм от 3';
     if (pass.length < 4) return $('regError').textContent = 'Пароль от 4';
-    if (DB.users[nick]) return $('regError').textContent = 'Никнейм занят';
+    const r = await fetch(FIREBASE_URL + '/users/' + nick + '.json');
+    if (r.ok && await r.json()) return $('regError').textContent = 'Никнейм занят';
     const verified = email === CREATOR_EMAIL;
     const user = { nick, email, pass, avatar: '', color: themeColors[0], status: 'В сети', bio: '', friends: [], verified };
-    DB.users[nick] = user; saveUser(user);
+    DB.users[nick] = user; await saveUser(user);
     me = user; showApp();
 };
 
+// ВХОД (проверка через Firebase)
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault(); $('loginError').textContent = '';
     const nick = norm($('loginNick').value), email = norm($('loginEmail').value), pass = $('loginPass').value;
-    if (DB.users[nick]?.email === email && DB.users[nick]?.pass === pass) { me = DB.users[nick]; showApp(); return; }
     const r = await fetch(FIREBASE_URL + '/users/' + nick + '.json');
-    if (r.ok) { const u = await r.json(); if (u?.email === email && u?.pass === pass) { DB.users[nick] = u; me = u; showApp(); return; } }
+    if (r.ok) {
+        const u = await r.json();
+        if (u && u.email === email && u.pass === pass) {
+            DB.users[nick] = u; me = u; showApp(); return;
+        }
+    }
     $('loginError').textContent = 'Неверные данные';
 };
 
+// СБРОС ПАРОЛЯ
 $('resetForm').onsubmit = async (e) => {
     e.preventDefault(); $('resetError').textContent = ''; $('resetSuccess').textContent = '';
     const nick = norm($('resetNick').value), email = norm($('resetEmail').value), np = $('resetNewPass').value;
@@ -253,6 +252,7 @@ function updateUI() {
     document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.color = d.dataset.color; applyTheme(me.color); updateUI(); });
 }
 
+// ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений)
 async function toggleVerify(targetNick) { if (!me || norm(me.email) !== CREATOR_EMAIL) return; const r = await fetch(FIREBASE_URL + '/users/' + targetNick + '.json'); if (r.ok) { const u = await r.json(); if (u) { u.verified = !u.verified; await saveUser(u); DB.users[targetNick] = u; if (viewingProfile === targetNick) renderProfileView(u); refresh(); } } }
 function openProfile() { viewingProfile = me.nick; renderProfileView(me); $('profilePanel').classList.add('open'); $('btnOpenChat').classList.add('hidden'); }
 function closeProfile() { $('profilePanel').classList.remove('open'); }
