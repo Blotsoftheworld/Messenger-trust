@@ -152,7 +152,6 @@
         <div id="emptyChat" style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--text3);flex-direction:column">
             <div style="font-size:56px;opacity:0.4">💬</div>
             <h3>Добро пожаловать</h3>
-            <p style="font-size:13px;">Выберите чат или добавьте друга</p>
         </div>
         <div id="chatHead" class="hidden" style="padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px">
             <button class="back-btn-mobile" id="btnBack">←</button>
@@ -241,7 +240,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const API_URL = 'https://api.npoint.io/29c09f2a7f1005d2f762';
+const API_URL = 'https://jsonblob.com/api/jsonBlob/1351319064106270720';
 const CREATOR_EMAIL = 'logunov2512@gmail.com';
 
 let me = null, activeChat = null, refreshTimer = null;
@@ -252,22 +251,39 @@ const themeColors = ['#6c5ce7','#e74c3c','#f39c12','#3498db','#1abc9c','#e91e63'
 
 function toBase64(arr) { return btoa(String.fromCharCode(...new Uint8Array(arr))); }
 function fromBase64(str) { return new Uint8Array(atob(str).split('').map(c => c.charCodeAt(0))); }
-function encrypt(text, key) {
-    if (!text) return '';
-    const enc = new TextEncoder().encode(text), keyBytes = new TextEncoder().encode(key);
-    const result = new Uint8Array(enc.length);
-    for (let i = 0; i < enc.length; i++) result[i] = enc[i] ^ keyBytes[i % keyBytes.length];
-    return toBase64(result);
-}
-function decrypt(encoded, key) {
-    if (!encoded) return '';
-    try { const data = fromBase64(encoded), keyBytes = new TextEncoder().encode(key); const result = new Uint8Array(data.length); for (let i = 0; i < data.length; i++) result[i] = data[i] ^ keyBytes[i % keyBytes.length]; return new TextDecoder().decode(result); } catch { return encoded; }
-}
+function encrypt(text, key) { if (!text) return ''; const enc = new TextEncoder().encode(text), keyBytes = new TextEncoder().encode(key); const result = new Uint8Array(enc.length); for (let i = 0; i < enc.length; i++) result[i] = enc[i] ^ keyBytes[i % keyBytes.length]; return toBase64(result); }
+function decrypt(encoded, key) { if (!encoded) return ''; try { const data = fromBase64(encoded), keyBytes = new TextEncoder().encode(key); const result = new Uint8Array(data.length); for (let i = 0; i < data.length; i++) result[i] = data[i] ^ keyBytes[i % keyBytes.length]; return new TextDecoder().decode(result); } catch { return encoded; } }
 function getKey(a, b) { return [norm(a), norm(b)].sort().join('_') + '_key'; }
 function norm(s) { return String(s||'').toLowerCase().trim(); }
 
-async function loadDB() { try { const r = await fetch(API_URL); if (r.ok) { const data = await r.json(); if (data && data.users) return data; } } catch(e) {} try { return JSON.parse(localStorage.getItem('trust_data') || '{"users":[],"messages":{}}'); } catch { return { users: [], messages: {} }; } }
-function saveDB(data) { if (!data || !data.users) return; localStorage.setItem('trust_data', JSON.stringify(data)); }
+// Загрузка с jsonblob.com
+async function loadDB() {
+    try {
+        const r = await fetch(API_URL, { headers: { 'Accept': 'application/json' } });
+        if (r.ok) {
+            const data = await r.json();
+            if (data && data.users) return data;
+        }
+    } catch(e) { console.warn('Сервер недоступен, использую локальную копию'); }
+    try { return JSON.parse(localStorage.getItem('trust_data') || '{"users":[],"messages":{}}'); }
+    catch { return { users: [], messages: {} }; }
+}
+
+// Сохранение на jsonblob.com (PUT полностью заменяет данные)
+async function saveDB(data) {
+    if (!data || !data.users) return;
+    localStorage.setItem('trust_data', JSON.stringify(data)); // локальный бэкап
+    try {
+        const r = await fetch(API_URL, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!r.ok) throw new Error('Ошибка сервера');
+    } catch(e) {
+        console.warn('Не удалось сохранить на сервер, данные в локальном хранилище');
+    }
+}
 
 function setLoading(btn, loading) { btn.disabled = loading; btn.innerHTML = loading ? '<span class="spinner"></span>' : btn.getAttribute('data-text'); }
 document.querySelectorAll('button[type="submit"]').forEach(b => b.setAttribute('data-text', b.textContent));
@@ -279,9 +295,9 @@ function showAuthTab(tab) { $('tabLogin').classList.toggle('active', tab==='logi
 $('forgotPassBtn').onclick = () => { $('tabLogin').style.display='none'; $('tabReg').style.display='none'; $('tabReset').style.display='block'; $('tabReset').classList.add('active'); $('loginForm').classList.remove('active'); $('regForm').classList.remove('active'); $('resetForm').classList.add('active'); };
 $('backToLogin').onclick = () => { showAuthTab('login'); $('resetSuccess').textContent=''; };
 
-$('regForm').onsubmit = async (e) => { e.preventDefault(); const btn = $('regBtn'); setLoading(btn, true); const nick = norm($('regNick').value), email = norm($('regEmail').value), pass = $('regPass').value; if (pass !== $('regPass2').value) { $('regError').textContent='Пароли не совпадают'; setLoading(btn, false); return; } if (nick.length<3) { $('regError').textContent='Никнейм от 3'; setLoading(btn, false); return; } if (pass.length<8) { $('regError').textContent='Пароль от 8'; setLoading(btn, false); return; } const db = await loadDB(); if (db.users.find(u => norm(u.nick)===nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; } const verified = email === CREATOR_EMAIL; const newUser = { nick, email, pass, avatar:'', avatarColor:themeColors[0], status:'В сети', bio:'', friends:[], lastOnline: Date.now(), verified }; db.users.push(newUser); saveDB(db); me = newUser; localStorage.setItem('trust_session_nick', nick); setLoading(btn, false); showApp(); };
+$('regForm').onsubmit = async (e) => { e.preventDefault(); const btn = $('regBtn'); setLoading(btn, true); const nick = norm($('regNick').value), email = norm($('regEmail').value), pass = $('regPass').value; if (pass !== $('regPass2').value) { $('regError').textContent='Пароли не совпадают'; setLoading(btn, false); return; } if (nick.length<3) { $('regError').textContent='Никнейм от 3'; setLoading(btn, false); return; } if (pass.length<8) { $('regError').textContent='Пароль от 8'; setLoading(btn, false); return; } const db = await loadDB(); if (db.users.find(u => norm(u.nick)===nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; } const verified = email === CREATOR_EMAIL; const newUser = { nick, email, pass, avatar:'', avatarColor:themeColors[0], status:'В сети', bio:'', friends:[], lastOnline: Date.now(), verified }; db.users.push(newUser); await saveDB(db); me = newUser; localStorage.setItem('trust_session_nick', nick); setLoading(btn, false); showApp(); };
 $('loginForm').onsubmit = async (e) => { e.preventDefault(); const btn = $('loginBtn'); setLoading(btn, true); const nick = norm($('loginNick').value), email = norm($('loginEmail').value), pass = $('loginPass').value; const db = await loadDB(); const user = db.users.find(u => norm(u.nick)===nick && norm(u.email)===email && u.pass===pass); if (!user) { $('loginError').textContent='Неверные данные'; setLoading(btn, false); return; } me = user; localStorage.setItem('trust_session_nick', user.nick); setLoading(btn, false); showApp(); };
-$('resetForm').onsubmit = async (e) => { e.preventDefault(); const btn = $('resetBtn'); setLoading(btn, true); const nick = norm($('resetNick').value), email = norm($('resetEmail').value), newPass = $('resetNewPass').value; if (newPass.length<8) { $('resetError').textContent='Пароль от 8'; setLoading(btn, false); return; } const db = await loadDB(); const idx = db.users.findIndex(u => norm(u.nick)===nick && norm(u.email)===email); if (idx===-1) { $('resetError').textContent='Не найден'; setLoading(btn, false); return; } db.users[idx].pass = newPass; saveDB(db); $('resetSuccess').textContent='Пароль изменён!'; setLoading(btn, false); };
+$('resetForm').onsubmit = async (e) => { e.preventDefault(); const btn = $('resetBtn'); setLoading(btn, true); const nick = norm($('resetNick').value), email = norm($('resetEmail').value), newPass = $('resetNewPass').value; if (newPass.length<8) { $('resetError').textContent='Пароль от 8'; setLoading(btn, false); return; } const db = await loadDB(); const idx = db.users.findIndex(u => norm(u.nick)===nick && norm(u.email)===email); if (idx===-1) { $('resetError').textContent='Не найден'; setLoading(btn, false); return; } db.users[idx].pass = newPass; await saveDB(db); $('resetSuccess').textContent='Пароль изменён!'; setLoading(btn, false); };
 
 function showApp() { $('authScreen').classList.add('hidden'); $('appScreen').classList.remove('hidden'); applyTheme(me.avatarColor || themeColors[0]); updateUI(); updateOnlineStatus(); refresh(); refreshTimer = setInterval(refresh, 2000); $('messagesContainer').addEventListener('scroll', () => { userScrolledUp = $('messagesContainer').scrollHeight - $('messagesContainer').scrollTop - $('messagesContainer').clientHeight > 80; }); }
 function updateOnlineStatus() { if (!me) return; me.lastOnline = Date.now(); loadDB().then(db => { const idx = db.users.findIndex(u => norm(u.nick)===norm(me.nick)); if (idx!==-1) { db.users[idx].lastOnline = me.lastOnline; saveDB(db); } }); }
@@ -290,7 +306,7 @@ function applyTheme(color) { document.documentElement.style.setProperty('--accen
 
 function updateUI() { const av = $('myAvatar'), sa = $('settingsAvatar'); [av, sa].forEach(el => { if (!el) return; if (me.avatar) { el.style.backgroundImage=`url(${me.avatar})`; el.style.backgroundColor='transparent'; el.textContent=''; } else { el.style.backgroundImage='none'; el.style.backgroundColor=me.avatarColor||themeColors[0]; el.textContent=me.nick[0].toUpperCase(); } const oldBadge = el.querySelector('.verified-badge'); if (oldBadge) oldBadge.remove(); if (me.verified) { const badge = document.createElement('div'); badge.className = 'verified-badge'; badge.textContent = '✓'; badge.title = 'Верифицирован'; el.style.position = 'relative'; el.appendChild(badge); } }); $('myName').textContent=me.nick; $('myStatus').textContent=me.status; $('settingsNick').value=me.nick; $('settingsStatus').value=me.status; $('settingsBio').value=me.bio||''; $('settingsEmail').value=me.email||''; $('settingsPass').value=''; $('themeColors').innerHTML = themeColors.map(c => `<div class="color-dot ${c===(me.avatarColor||themeColors[0])?'selected':''}" style="background:${c}" data-color="${c}"></div>`).join(''); document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.avatarColor = d.dataset.color; applyTheme(me.avatarColor); updateUI(); }); }
 
-async function toggleVerify(targetNick) { if (!me || norm(me.email) !== CREATOR_EMAIL) return; const db = await loadDB(); const user = db.users.find(u => norm(u.nick) === norm(targetNick)); if (!user) return; user.verified = !user.verified; saveDB(db); if (viewingProfile === targetNick) renderProfileView(user); refresh(); }
+async function toggleVerify(targetNick) { if (!me || norm(me.email) !== CREATOR_EMAIL) return; const db = await loadDB(); const user = db.users.find(u => norm(u.nick) === norm(targetNick)); if (!user) return; user.verified = !user.verified; await saveDB(db); if (viewingProfile === targetNick) renderProfileView(user); refresh(); }
 function openProfile() { viewingProfile = me.nick; renderProfileView(me); $('profilePanel').classList.add('open'); $('btnOpenChat').classList.add('hidden'); }
 function closeProfile() { $('profilePanel').classList.remove('open'); viewingProfile = null; }
 async function viewProfile() { if (!activeChat) return; viewingProfile = activeChat; const db = await loadDB(); const friend = db.users.find(u => norm(u.nick)===norm(activeChat)); if (!friend) return; renderProfileView(friend); $('btnOpenChat').classList.remove('hidden'); $('btnOpenChat').onclick = () => { closeProfile(); openChat(friend.nick); }; $('profilePanel').classList.add('open'); }
@@ -300,45 +316,10 @@ async function refresh() { if (!me) return; const db = await loadDB(); me = db.u
 function openChat(p) { activeChat=p; userScrolledUp=false; $('emptyChat').classList.add('hidden'); $('chatHead').classList.remove('hidden'); $('messagesContainer').classList.remove('hidden'); $('inputArea').classList.remove('hidden'); $('partnerName').textContent=p; $('partnerAvatar').textContent=p[0].toUpperCase(); $('partnerAvatar').style.backgroundImage='none'; $('partnerAvatar').style.backgroundColor='var(--accent)'; const oldBadge = $('partnerAvatar').querySelector('.verified-badge'); if (oldBadge) oldBadge.remove(); loadDB().then(db => { const friend = db.users.find(u => norm(u.nick)===norm(p)); if (friend) { $('partnerStatus').textContent = isOnline(friend) ? 'В сети' : 'Не в сети'; if (friend.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✓'; $('partnerAvatar').style.position='relative'; $('partnerAvatar').appendChild(badge); } } }); if (window.innerWidth<=768) $('sidebar').classList.add('mobile-hidden'); refresh(); }
 function closeChat() { activeChat=null; $('sidebar').classList.remove('mobile-hidden'); $('emptyChat').classList.remove('hidden'); $('chatHead').classList.add('hidden'); $('messagesContainer').classList.add('hidden'); $('inputArea').classList.add('hidden'); $('previewBar').classList.add('hidden'); }
 
-// УДАЛЕНИЕ СООБЩЕНИЙ
-async function deleteMessage(msgTime) {
-    if (!activeChat || !me) return;
-    const db = await loadDB();
-    const id = [me.nick, activeChat].sort().join('_');
-    if (!db.messages || !db.messages[id]) return;
-    const msg = db.messages[id].find(m => m.time === msgTime && m.from === me.nick);
-    if (msg) {
-        msg.deleted = true;
-        msg.text = '';
-        msg.file = null;
-        msg.fileType = null;
-        saveDB(db);
-        renderMessages(db);
-    }
-}
+async function deleteMessage(msgTime) { if (!activeChat || !me) return; const db = await loadDB(); const id = [me.nick, activeChat].sort().join('_'); if (!db.messages || !db.messages[id]) return; const msg = db.messages[id].find(m => m.time === msgTime && m.from === me.nick); if (msg) { msg.deleted = true; msg.text = ''; msg.file = null; msg.fileType = null; await saveDB(db); renderMessages(db); } }
+function renderMessages(db) { if (!activeChat || !me) return; const id = [me.nick, activeChat].sort().join('_'); const msgs = (db.messages||{})[id] || []; const key = getKey(me.nick, activeChat); const wasNearBottom = !userScrolledUp; $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => { if (m.deleted) return `<div class="msg deleted"><i>Сообщение удалено</i><div style="font-size:9px;opacity:0.5;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`; let text = m.text || ''; if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не расшифровано]'; let content = ''; if (m.file) { const icons={image:'🖼️',video:'🎬',audio:'🎵'}, names={image:'Изображение',video:'Видео',audio:'Аудио'}; content += `<div class="file-attachment" onclick="window.open('${m.file}')"><div class="file-icon">${icons[m.fileType]||'📎'}</div><div class="file-info"><div class="file-name">${names[m.fileType]||'Файл'}</div><div class="file-size">Нажмите для открытия</div></div></div>`; } if (text) content += `<div>${text}</div>`; const delBtn = m.from === me.nick ? `<button class="delete-btn" onclick="event.stopPropagation(); deleteMessage(${m.time})" title="Удалить">✕</button>` : ''; return `<div class="msg ${m.from===me.nick?'own':'other'}">${delBtn}${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`; }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">Начните переписку</div>'; if (wasNearBottom) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight; }
 
-function renderMessages(db) {
-    if (!activeChat || !me) return;
-    const id = [me.nick, activeChat].sort().join('_');
-    const msgs = (db.messages||{})[id] || [];
-    const key = getKey(me.nick, activeChat);
-    const wasNearBottom = !userScrolledUp;
-    $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
-        if (m.deleted) {
-            return `<div class="msg deleted"><i>Сообщение удалено</i><div style="font-size:9px;opacity:0.5;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
-        }
-        let text = m.text || '';
-        if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не расшифровано]';
-        let content = '';
-        if (m.file) { const icons={image:'🖼️',video:'🎬',audio:'🎵'}, names={image:'Изображение',video:'Видео',audio:'Аудио'}; content += `<div class="file-attachment" onclick="window.open('${m.file}')"><div class="file-icon">${icons[m.fileType]||'📎'}</div><div class="file-info"><div class="file-name">${names[m.fileType]||'Файл'}</div><div class="file-size">Нажмите для открытия</div></div></div>`; }
-        if (text) content += `<div>${text}</div>`;
-        const delBtn = m.from === me.nick ? `<button class="delete-btn" onclick="event.stopPropagation(); deleteMessage(${m.time})" title="Удалить">✕</button>` : '';
-        return `<div class="msg ${m.from===me.nick?'own':'other'}">${delBtn}${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
-    }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">Начните переписку</div>';
-    if (wasNearBottom) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
-}
-
-async function sendMessage(text='', file=null, fileType='') { if (!activeChat || !me) return; const btn = $('sendBtn'); setLoading(btn, true); try { const db = await loadDB(); const id = [me.nick, activeChat].sort().join('_'); if (!db.messages) db.messages = {}; if (!db.messages[id]) db.messages[id] = []; const key = getKey(me.nick, activeChat); const msgText = text && encryptionEnabled ? encrypt(text, key) : text; db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text}); saveDB(db); pendingFile = null; $('previewBar').classList.add('hidden'); $('messageInput').value = ''; userScrolledUp = false; await renderMessages(db); await refresh(); } catch(e) { alert('Ошибка: '+e.message); } finally { setLoading(btn, false); if (pendingFile) cancelFile(); } }
+async function sendMessage(text='', file=null, fileType='') { if (!activeChat || !me) return; const btn = $('sendBtn'); setLoading(btn, true); try { const db = await loadDB(); const id = [me.nick, activeChat].sort().join('_'); if (!db.messages) db.messages = {}; if (!db.messages[id]) db.messages[id] = []; const key = getKey(me.nick, activeChat); const msgText = text && encryptionEnabled ? encrypt(text, key) : text; db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text}); await saveDB(db); pendingFile = null; $('previewBar').classList.add('hidden'); $('messageInput').value = ''; userScrolledUp = false; await renderMessages(db); await refresh(); } catch(e) { alert('Ошибка: '+e.message); } finally { setLoading(btn, false); if (pendingFile) cancelFile(); } }
 $('sendBtn').onclick = () => { const text = $('messageInput').value.trim(); if (pendingFile) { sendMessage(text, pendingFile.data, pendingFile.type); } else if (text) { sendMessage(text); } };
 $('messageInput').onkeydown = e => { if (e.key==='Enter') $('sendBtn').click(); };
 async function handleFileSelect() { const file = $('fileInput').files[0]; if (!file) return; if (file.size>1024*1024) { alert('Файл слишком большой (макс. 1 МБ)'); return; } const reader = new FileReader(); reader.onload = () => { const type = file.type.startsWith('image/')?'image':file.type.startsWith('video/')?'video':file.type.startsWith('audio/')?'audio':'file'; pendingFile = { data: reader.result, type, name: file.name }; $('previewBar').innerHTML = `<span>${type==='image'?'🖼️':type==='video'?'🎬':type==='audio'?'🎵':'📎'} ${file.name}</span> <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`; $('previewBar').classList.remove('hidden'); }; reader.readAsDataURL(file); $('fileInput').value = ''; }
@@ -349,12 +330,12 @@ async function searchUsers() { const q = norm($('friendNickInput').value); const
 function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestions').style.display='none'; }
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
 function closeSettings() { $('settingsPanel').classList.remove('open'); }
-$('btnSaveSettings').onclick = async () => { const db = await loadDB(); const idx = db.users.findIndex(u => norm(u.nick)===norm(me.nick)); if (idx===-1) return; const newNick = norm($('settingsNick').value); if (newNick !== norm(me.nick) && db.users.find(u => norm(u.nick)===newNick)) return alert('Никнейм занят'); const newPass = $('settingsPass').value; if (newPass && newPass.length<8) return alert('Пароль от 8 символов'); db.users[idx] = {...db.users[idx], nick: newNick||me.nick, status: $('settingsStatus').value.trim()||'В сети', bio: $('settingsBio').value.trim(), email: norm($('settingsEmail').value)||me.email, avatar: me.avatar, avatarColor: me.avatarColor, lastOnline: Date.now()}; if (newPass.length>=8) db.users[idx].pass = newPass; saveDB(db); me = db.users[idx]; localStorage.setItem('trust_session_nick', me.nick); updateUI(); closeSettings(); refresh(); };
+$('btnSaveSettings').onclick = async () => { const db = await loadDB(); const idx = db.users.findIndex(u => norm(u.nick)===norm(me.nick)); if (idx===-1) return; const newNick = norm($('settingsNick').value); if (newNick !== norm(me.nick) && db.users.find(u => norm(u.nick)===newNick)) return alert('Никнейм занят'); const newPass = $('settingsPass').value; if (newPass && newPass.length<8) return alert('Пароль от 8 символов'); db.users[idx] = {...db.users[idx], nick: newNick||me.nick, status: $('settingsStatus').value.trim()||'В сети', bio: $('settingsBio').value.trim(), email: norm($('settingsEmail').value)||me.email, avatar: me.avatar, avatarColor: me.avatarColor, lastOnline: Date.now()}; if (newPass.length>=8) db.users[idx].pass = newPass; await saveDB(db); me = db.users[idx]; localStorage.setItem('trust_session_nick', me.nick); updateUI(); closeSettings(); refresh(); };
 $('btnLogout').onclick = () => { if(stream) stream.getTracks().forEach(t=>t.stop()); localStorage.removeItem('trust_session_nick'); me = null; activeChat = null; $('appScreen').classList.add('hidden'); $('authScreen').classList.remove('hidden'); };
 function showDonate() { $('donateModal').classList.remove('hidden'); }
 $('btnAddFriend').onclick = () => { $('addFriendModal').classList.remove('hidden'); $('friendNickInput').value = ''; $('addFriendError').textContent = ''; $('addFriendSuccess').textContent = ''; $('userSuggestions').style.display = 'none'; };
 $('btnCancelAddFriend').onclick = () => $('addFriendModal').classList.add('hidden');
-$('btnConfirmAddFriend').onclick = async () => { const nick = $('friendNickInput').value.trim(); if (!nick) return $('addFriendError').textContent = 'Введите ник'; if (norm(nick)===norm(me.nick)) return $('addFriendError').textContent = 'Это вы'; const db = await loadDB(); const friend = db.users.find(u => norm(u.nick)===norm(nick)); if (!friend) return $('addFriendError').textContent = 'Не найден'; const u = db.users.find(u => norm(u.nick)===norm(me.nick)); if (u.friends.includes(friend.nick)) return $('addFriendError').textContent = 'Уже в друзьях'; u.friends.push(friend.nick); friend.friends.push(me.nick); saveDB(db); $('addFriendSuccess').textContent = 'Добавлен!'; setTimeout(() => { $('addFriendModal').classList.add('hidden'); refresh(); }, 800); };
+$('btnConfirmAddFriend').onclick = async () => { const nick = $('friendNickInput').value.trim(); if (!nick) return $('addFriendError').textContent = 'Введите ник'; if (norm(nick)===norm(me.nick)) return $('addFriendError').textContent = 'Это вы'; const db = await loadDB(); const friend = db.users.find(u => norm(u.nick)===norm(nick)); if (!friend) return $('addFriendError').textContent = 'Не найден'; const u = db.users.find(u => norm(u.nick)===norm(me.nick)); if (u.friends.includes(friend.nick)) return $('addFriendError').textContent = 'Уже в друзьях'; u.friends.push(friend.nick); friend.friends.push(me.nick); await saveDB(db); $('addFriendSuccess').textContent = 'Добавлен!'; setTimeout(() => { $('addFriendModal').classList.add('hidden'); refresh(); }, 800); };
 $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display='none'; });
