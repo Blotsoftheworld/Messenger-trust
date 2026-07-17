@@ -202,7 +202,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-const API_URL = 'https://jsonblob.com/api/jsonBlob/019f7066-59ac-7e9e-bcd5-860864b8b173';
+const API_URL = 'https://jsonblob.com/api/jsonBlob/1352220445243834368';
 const CREATOR_EMAIL = 'logunov2512@gmail.com';
 
 let DB = { users: [], messages: {} };
@@ -214,8 +214,27 @@ const themeColors = ['#6c5ce7','#e74c3c','#f39c12','#3498db','#1abc9c','#e91e63'
 
 function norm(s) { return String(s||'').toLowerCase().trim(); }
 
-async function loadDB() { try { const r = await fetch(API_URL, { headers: { 'Accept': 'application/json' } }); if (r.ok) { const data = await r.json(); if (data?.users) { DB = data; return true; } } } catch(e) {} return false; }
-async function saveDB() { try { await fetch(API_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(DB) }); return true; } catch(e) { return false; } }
+async function loadDB() {
+    try {
+        const r = await fetch(API_URL);
+        if (r.ok) {
+            const data = await r.json();
+            if (data?.users) { DB = data; return true; }
+        }
+    } catch(e) {}
+    return false;
+}
+
+async function saveDB() {
+    try {
+        const r = await fetch(API_URL, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(DB)
+        });
+        return r.ok;
+    } catch(e) { return false; }
+}
 
 function setLoading(btn, l) { btn.disabled = l; btn.innerHTML = l ? '<span class="spinner"></span>' : btn.getAttribute('data-text'); }
 document.querySelectorAll('button[type="submit"]').forEach(b => b.setAttribute('data-text', b.textContent));
@@ -227,41 +246,241 @@ function showAuthTab(tab) { $('tabLogin').classList.toggle('active', tab==='logi
 $('forgotPassBtn').onclick = () => { $('tabLogin').style.display='none'; $('tabReg').style.display='none'; $('tabReset').style.display='block'; $('tabReset').classList.add('active'); $('loginForm').classList.remove('active'); $('regForm').classList.remove('active'); $('resetForm').classList.add('active'); };
 $('backToLogin').onclick = () => { showAuthTab('login'); $('resetSuccess').textContent=''; };
 
-$('regForm').onsubmit = async (e) => { e.preventDefault(); const btn = $('regBtn'); setLoading(btn, true); await loadDB(); const nick = norm($('regNick').value), email = norm($('regEmail').value), pass = $('regPass').value; if (pass !== $('regPass2').value) { $('regError').textContent='Пароли не совпадают'; setLoading(btn, false); return; } if (nick.length<3) { $('regError').textContent='Никнейм от 3'; setLoading(btn, false); return; } if (pass.length<8) { $('regError').textContent='Пароль от 8'; setLoading(btn, false); return; } if (DB.users.find(u => norm(u.nick)===nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; } const verified = email === CREATOR_EMAIL; const newUser = { nick, email, pass, avatar:'', color:themeColors[0], status:'В сети', bio:'', friends:[], lastOnline: Date.now(), verified }; DB.users.push(newUser); await saveDB(); me = newUser; setLoading(btn, false); showApp(); };
-$('loginForm').onsubmit = async (e) => { e.preventDefault(); const btn = $('loginBtn'); setLoading(btn, true); await loadDB(); const nick = norm($('loginNick').value), email = norm($('loginEmail').value), pass = $('loginPass').value; const user = DB.users.find(u => norm(u.nick)===nick && norm(u.email)===email && u.pass===pass); if (!user) { $('loginError').textContent='Неверные данные'; setLoading(btn, false); return; } me = user; setLoading(btn, false); showApp(); };
-$('resetForm').onsubmit = async (e) => { e.preventDefault(); const btn = $('resetBtn'); setLoading(btn, true); await loadDB(); const nick = norm($('resetNick').value), email = norm($('resetEmail').value), newPass = $('resetNewPass').value; if (newPass.length<8) { $('resetError').textContent='Пароль от 8'; setLoading(btn, false); return; } const idx = DB.users.findIndex(u => norm(u.nick)===nick && norm(u.email)===email); if (idx===-1) { $('resetError').textContent='Не найден'; setLoading(btn, false); return; } DB.users[idx].pass = newPass; await saveDB(); $('resetSuccess').textContent='Пароль изменён!'; setLoading(btn, false); };
+$('regForm').onsubmit = async (e) => {
+    e.preventDefault(); const btn = $('regBtn'); setLoading(btn, true);
+    await loadDB();
+    const nick = norm($('regNick').value), email = norm($('regEmail').value), pass = $('regPass').value;
+    if (pass !== $('regPass2').value) { $('regError').textContent='Пароли не совпадают'; setLoading(btn, false); return; }
+    if (nick.length<3) { $('regError').textContent='Никнейм от 3'; setLoading(btn, false); return; }
+    if (pass.length<8) { $('regError').textContent='Пароль от 8'; setLoading(btn, false); return; }
+    if (DB.users.find(u => norm(u.nick)===nick)) { $('regError').textContent='Никнейм занят'; setLoading(btn, false); return; }
+    if (DB.users.find(u => norm(u.email)===email)) { $('regError').textContent='Email занят'; setLoading(btn, false); return; }
+    const verified = email === CREATOR_EMAIL;
+    const user = { nick, email, pass, avatar:'', color:themeColors[0], status:'В сети', bio:'', friends:[], lastOnline: Date.now(), verified };
+    DB.users.push(user);
+    const ok = await saveDB();
+    if (!ok) { $('regError').textContent='Ошибка сервера'; setLoading(btn, false); return; }
+    me = user;
+    setLoading(btn, false); showApp();
+};
 
-function showApp() { $('authScreen').classList.add('hidden'); $('appScreen').classList.remove('hidden'); applyTheme(me.color||themeColors[0]); updateUI(); refresh(); refreshTimer = setInterval(refresh, 2000); $('messagesContainer').addEventListener('scroll', () => { userScrolledUp = $('messagesContainer').scrollHeight - $('messagesContainer').scrollTop - $('messagesContainer').clientHeight > 80; }); }
+$('loginForm').onsubmit = async (e) => {
+    e.preventDefault(); const btn = $('loginBtn'); setLoading(btn, true);
+    await loadDB();
+    const nick = norm($('loginNick').value), email = norm($('loginEmail').value), pass = $('loginPass').value;
+    const user = DB.users.find(u => norm(u.nick)===nick && norm(u.email)===email && u.pass===pass);
+    if (!user) { $('loginError').textContent='Неверные данные'; setLoading(btn, false); return; }
+    me = user;
+    setLoading(btn, false); showApp();
+};
+
+$('resetForm').onsubmit = async (e) => {
+    e.preventDefault(); const btn = $('resetBtn'); setLoading(btn, true);
+    await loadDB();
+    const nick = norm($('resetNick').value), email = norm($('resetEmail').value), newPass = $('resetNewPass').value;
+    if (newPass.length<8) { $('resetError').textContent='Пароль от 8'; setLoading(btn, false); return; }
+    const idx = DB.users.findIndex(u => norm(u.nick)===nick && norm(u.email)===email);
+    if (idx===-1) { $('resetError').textContent='Не найден'; setLoading(btn, false); return; }
+    DB.users[idx].pass = newPass; await saveDB();
+    $('resetSuccess').textContent='Пароль изменён!'; setLoading(btn, false);
+};
+
+function showApp() {
+    $('authScreen').classList.add('hidden'); $('appScreen').classList.remove('hidden');
+    applyTheme(me.color||themeColors[0]); updateUI(); refresh();
+    refreshTimer = setInterval(refresh, 2000);
+    $('messagesContainer').addEventListener('scroll', () => {
+        userScrolledUp = $('messagesContainer').scrollHeight - $('messagesContainer').scrollTop - $('messagesContainer').clientHeight > 80;
+    });
+}
+
 function applyTheme(c) { document.documentElement.style.setProperty('--accent', c); document.documentElement.style.setProperty('--msg-own', c); }
-function updateUI() { const av = $('myAvatar'), sa = $('settingsAvatar'); [av, sa].forEach(el => { if (!el) return; if (me.avatar) { el.style.backgroundImage=`url(${me.avatar})`; el.style.backgroundColor='transparent'; el.textContent=''; } else { el.style.backgroundImage='none'; el.style.backgroundColor=me.color||themeColors[0]; el.textContent=me.nick[0].toUpperCase(); } const oldBadge = el.querySelector('.verified-badge'); if (oldBadge) oldBadge.remove(); if (me.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✓'; el.style.position='relative'; el.appendChild(badge); } }); $('myName').textContent=me.nick; $('myStatus').textContent=me.status; $('settingsNick').value=me.nick; $('settingsStatus').value=me.status; $('settingsBio').value=me.bio||''; $('settingsEmail').value=me.email||''; $('settingsPass').value=''; $('themeColors').innerHTML = themeColors.map(c => `<div class="color-dot ${c===(me.color||themeColors[0])?'selected':''}" style="background:${c}" data-color="${c}"></div>`).join(''); document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.color = d.dataset.color; applyTheme(me.color); updateUI(); }); }
 
-async function toggleVerify(targetNick) { if (!me || norm(me.email) !== CREATOR_EMAIL) return; await loadDB(); const user = DB.users.find(u => norm(u.nick) === norm(targetNick)); if (!user) return; user.verified = !user.verified; await saveDB(); if (viewingProfile === targetNick) renderProfileView(user); refresh(); }
+function updateUI() {
+    const av = $('myAvatar'), sa = $('settingsAvatar');
+    [av, sa].forEach(el => {
+        if (!el) return;
+        if (me.avatar) { el.style.backgroundImage=`url(${me.avatar})`; el.style.backgroundColor='transparent'; el.textContent=''; }
+        else { el.style.backgroundImage='none'; el.style.backgroundColor=me.color||themeColors[0]; el.textContent=me.nick[0].toUpperCase(); }
+        const oldBadge = el.querySelector('.verified-badge'); if (oldBadge) oldBadge.remove();
+        if (me.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✓'; el.style.position='relative'; el.appendChild(badge); }
+    });
+    $('myName').textContent=me.nick; $('myStatus').textContent=me.status;
+    $('settingsNick').value=me.nick; $('settingsStatus').value=me.status; $('settingsBio').value=me.bio||'';
+    $('settingsEmail').value=me.email||''; $('settingsPass').value='';
+    $('themeColors').innerHTML = themeColors.map(c => `<div class="color-dot ${c===(me.color||themeColors[0])?'selected':''}" style="background:${c}" data-color="${c}"></div>`).join('');
+    document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.color = d.dataset.color; applyTheme(me.color); updateUI(); });
+}
+
+async function toggleVerify(targetNick) {
+    if (!me || norm(me.email) !== CREATOR_EMAIL) return;
+    await loadDB();
+    const user = DB.users.find(u => norm(u.nick) === norm(targetNick));
+    if (!user) return;
+    user.verified = !user.verified;
+    await saveDB();
+    if (viewingProfile === targetNick) renderProfileView(user);
+    refresh();
+}
+
 function openProfile() { viewingProfile = me.nick; renderProfileView(me); $('profilePanel').classList.add('open'); $('btnOpenChat').classList.add('hidden'); }
 function closeProfile() { $('profilePanel').classList.remove('open'); viewingProfile = null; }
-async function viewProfile() { if (!activeChat) return; viewingProfile = activeChat; await loadDB(); const friend = DB.users.find(u => norm(u.nick)===norm(activeChat)); if (!friend) return; renderProfileView(friend); $('btnOpenChat').classList.remove('hidden'); $('btnOpenChat').onclick = () => { closeProfile(); openChat(friend.nick); }; $('profilePanel').classList.add('open'); }
-function renderProfileView(user) { const pa = $('profileAvatar'); if (user.avatar) { pa.style.backgroundImage=`url(${user.avatar})`; pa.style.backgroundColor='transparent'; pa.textContent=''; } else { pa.style.backgroundImage='none'; pa.style.backgroundColor=user.color||themeColors[0]; pa.textContent=user.nick[0].toUpperCase(); } const oldBadge = pa.querySelector('.verified-badge'); if (oldBadge) oldBadge.remove(); if (user.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✓'; pa.style.position='relative'; pa.appendChild(badge); } $('profileNick').textContent=user.nick; $('profileBio').textContent=user.bio||'Не указано'; $('profileFriends').textContent=(user.friends||[]).length; $('profileOnline').textContent='В сети'; $('profileLastSeen').textContent=user.lastOnline?new Date(user.lastOnline).toLocaleString():'Давно'; const vc = $('verifyControls'); vc.innerHTML = ''; if (me && norm(me.email) === CREATOR_EMAIL && norm(user.nick) !== norm(me.nick)) { vc.innerHTML = user.verified ? `<button class="unverify-btn" onclick="toggleVerify('${user.nick}')">❌ Забрать галочку</button>` : `<button class="verify-btn" onclick="toggleVerify('${user.nick}')">✅ Выдать галочку</button>`; } }
 
-async function refresh() { if (!me) return; await loadDB(); me = DB.users.find(u => norm(u.nick)===norm(me.nick)) || me; const chats = [], seen = new Set(); Object.entries(DB.messages||{}).forEach(([id, msgs]) => { if (id.includes(me.nick) && msgs.length) { const p = id.split('_').find(x => x!==me.nick); if (!seen.has(p)) { seen.add(p); const l=msgs[msgs.length-1]; chats.push({partner:p, last:l.deleted?'Сообщение удалено':(l.file?'[Медиа]':(l.text||'')), time:l.time}); } } }); (me.friends||[]).forEach(f => { if (!seen.has(f)) chats.push({partner:f, last:'Начните общение!', time:0}); }); chats.sort((a,b) => b.time - a.time); $('chatList').innerHTML = chats.length ? chats.map(c => { const friend = DB.users.find(u => norm(u.nick)===norm(c.partner)); return `<div class="chat-item ${activeChat===c.partner?'active':''}" data-p="${c.partner}"><div class="avatar" style="background:${friend?.color||'var(--accent)'};position:relative;">${c.partner[0].toUpperCase()}${friend?.verified?'<div class="verified-badge">✓</div>':''}</div><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">${c.partner}${friend?.verified?' <span style="color:#2ecc71;">✓</span>':''}</div><div style="font-size:11px;color:var(--text3);">${(c.last||'').slice(0,30)}</div></div>${c.time?`<div style="font-size:10px;color:var(--text3);">${new Date(c.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>`:''}</div>`; }).join('') : '<div style="text-align:center;padding:30px;color:var(--text3)">Нет чатов</div>'; document.querySelectorAll('.chat-item').forEach(el => el.onclick = () => openChat(el.dataset.p)); if (activeChat) renderMessages(); }
-function openChat(p) { activeChat=p; userScrolledUp=false; $('emptyChat').classList.add('hidden'); $('chatHead').classList.remove('hidden'); $('messagesContainer').classList.remove('hidden'); $('inputArea').classList.remove('hidden'); $('partnerName').textContent=p; $('partnerAvatar').textContent=p[0].toUpperCase(); $('partnerAvatar').style.background='var(--accent)'; const oldBadge = $('partnerAvatar').querySelector('.verified-badge'); if (oldBadge) oldBadge.remove(); loadDB().then(() => { const friend = DB.users.find(u => norm(u.nick)===norm(p)); if (friend?.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✓'; $('partnerAvatar').style.position='relative'; $('partnerAvatar').appendChild(badge); } }); if (window.innerWidth<=768) $('sidebar').classList.add('mobile-hidden'); renderMessages(); }
-function closeChat() { activeChat=null; $('sidebar').classList.remove('mobile-hidden'); $('emptyChat').classList.remove('hidden'); $('chatHead').classList.add('hidden'); $('messagesContainer').classList.add('hidden'); $('inputArea').classList.add('hidden'); $('previewBar').classList.add('hidden'); }
+async function viewProfile() {
+    if (!activeChat) return; viewingProfile = activeChat;
+    await loadDB(); const friend = DB.users.find(u => norm(u.nick)===norm(activeChat));
+    if (!friend) return; renderProfileView(friend);
+    $('btnOpenChat').classList.remove('hidden');
+    $('btnOpenChat').onclick = () => { closeProfile(); openChat(friend.nick); };
+    $('profilePanel').classList.add('open');
+}
 
-async function deleteMessage(msgTime) { if (!activeChat || !me) return; await loadDB(); const id = [me.nick, activeChat].sort().join('_'); if (!DB.messages?.[id]) return; const msg = DB.messages[id].find(m => m.time === msgTime && m.from === me.nick); if (msg) { msg.deleted = true; msg.text = ''; msg.file = null; await saveDB(); renderMessages(); } }
-function renderMessages() { if (!activeChat || !me) return; const id = [me.nick, activeChat].sort().join('_'); const msgs = (DB.messages||{})[id] || []; const wasNearBottom = !userScrolledUp; $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => { if (m.deleted) return `<div class="msg deleted"><i>Сообщение удалено</i><div style="font-size:9px;opacity:0.5;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`; let text = m.text || ''; let content = ''; if (m.file) { const icons={image:'🖼️',video:'🎬',audio:'🎵'}, names={image:'Изображение',video:'Видео',audio:'Аудио'}; content += `<div class="file-attachment" onclick="window.open('${m.file}')"><div class="file-icon">${icons[m.fileType]||'📎'}</div><div class="file-info"><div class="file-name">${names[m.fileType]||'Файл'}</div><div class="file-size">Нажмите для открытия</div></div></div>`; } if (text) content += `<div>${text}</div>`; const delBtn = m.from === me.nick ? `<button class="delete-btn" onclick="event.stopPropagation(); deleteMessage(${m.time})" title="Удалить">✕</button>` : ''; return `<div class="msg ${m.from===me.nick?'own':'other'}">${delBtn}${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`; }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">💬 Начните переписку</div>'; if (wasNearBottom) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight; }
+function renderProfileView(user) {
+    const pa = $('profileAvatar');
+    if (user.avatar) { pa.style.backgroundImage=`url(${user.avatar})`; pa.style.backgroundColor='transparent'; pa.textContent=''; }
+    else { pa.style.backgroundImage='none'; pa.style.backgroundColor=user.color||themeColors[0]; pa.textContent=user.nick[0].toUpperCase(); }
+    const oldBadge = pa.querySelector('.verified-badge'); if (oldBadge) oldBadge.remove();
+    if (user.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✓'; pa.style.position='relative'; pa.appendChild(badge); }
+    $('profileNick').textContent=user.nick; $('profileBio').textContent=user.bio||'Не указано';
+    $('profileFriends').textContent=(user.friends||[]).length;
+    $('profileOnline').textContent='В сети';
+    $('profileLastSeen').textContent=user.lastOnline?new Date(user.lastOnline).toLocaleString():'Давно';
+    const vc = $('verifyControls'); vc.innerHTML = '';
+    if (me && norm(me.email) === CREATOR_EMAIL && norm(user.nick) !== norm(me.nick)) {
+        vc.innerHTML = user.verified 
+            ? `<button class="unverify-btn" onclick="toggleVerify('${user.nick}')">❌ Забрать галочку</button>`
+            : `<button class="verify-btn" onclick="toggleVerify('${user.nick}')">✅ Выдать галочку</button>`;
+    }
+}
 
-async function sendMessage(text='', file=null, fileType='') { if (!activeChat || !me) return; const btn = $('sendBtn'); setLoading(btn, true); try { await loadDB(); const id = [me.nick, activeChat].sort().join('_'); if (!DB.messages) DB.messages = {}; if (!DB.messages[id]) DB.messages[id] = []; DB.messages[id].push({from: me.nick, text, file, fileType, time: Date.now()}); await saveDB(); pendingFile = null; $('previewBar').classList.add('hidden'); $('messageInput').value = ''; userScrolledUp = false; renderMessages(); } catch(e) { alert('Ошибка: '+e.message); } finally { setLoading(btn, false); if (pendingFile) cancelFile(); } }
+async function refresh() {
+    if (!me) return;
+    await loadDB();
+    me = DB.users.find(u => norm(u.nick)===norm(me.nick)) || me;
+    const chats = [], seen = new Set();
+    Object.entries(DB.messages||{}).forEach(([id, msgs]) => {
+        if (id.includes(me.nick) && msgs.length) {
+            const p = id.split('_').find(x => x!==me.nick);
+            if (!seen.has(p)) { seen.add(p); const l=msgs[msgs.length-1]; chats.push({partner:p, last:l.deleted?'Сообщение удалено':(l.file?'[Медиа]':(l.text||'')), time:l.time}); }
+        }
+    });
+    (me.friends||[]).forEach(f => { if (!seen.has(f)) chats.push({partner:f, last:'Начните общение!', time:0}); });
+    chats.sort((a,b) => b.time - a.time);
+    $('chatList').innerHTML = chats.length ? chats.map(c => {
+        const friend = DB.users.find(u => norm(u.nick)===norm(c.partner));
+        return `<div class="chat-item ${activeChat===c.partner?'active':''}" data-p="${c.partner}">
+            <div class="avatar" style="background:${friend?.color||'var(--accent)'};position:relative;">${c.partner[0].toUpperCase()}${friend?.verified?'<div class="verified-badge">✓</div>':''}</div>
+            <div style="flex:1;min-width:0"><div style="font-weight:600;font-size:13px">${c.partner}${friend?.verified?' <span style="color:#2ecc71;">✓</span>':''}</div><div style="font-size:11px;color:var(--text3);">${(c.last||'').slice(0,30)}</div></div>
+            ${c.time?`<div style="font-size:10px;color:var(--text3);">${new Date(c.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div>`:''}
+        </div>`;
+    }).join('') : '<div style="text-align:center;padding:30px;color:var(--text3)">Нет чатов</div>';
+    document.querySelectorAll('.chat-item').forEach(el => el.onclick = () => openChat(el.dataset.p));
+    if (activeChat) renderMessages();
+}
+
+function openChat(p) {
+    activeChat=p; userScrolledUp=false;
+    $('emptyChat').classList.add('hidden'); $('chatHead').classList.remove('hidden');
+    $('messagesContainer').classList.remove('hidden'); $('inputArea').classList.remove('hidden');
+    $('partnerName').textContent=p; $('partnerAvatar').textContent=p[0].toUpperCase();
+    $('partnerAvatar').style.background='var(--accent)';
+    const oldBadge = $('partnerAvatar').querySelector('.verified-badge'); if (oldBadge) oldBadge.remove();
+    loadDB().then(() => {
+        const friend = DB.users.find(u => norm(u.nick)===norm(p));
+        if (friend?.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✓'; $('partnerAvatar').style.position='relative'; $('partnerAvatar').appendChild(badge); }
+    });
+    if (window.innerWidth<=768) $('sidebar').classList.add('mobile-hidden');
+    renderMessages();
+}
+
+function closeChat() {
+    activeChat=null;
+    $('sidebar').classList.remove('mobile-hidden');
+    $('emptyChat').classList.remove('hidden'); $('chatHead').classList.add('hidden');
+    $('messagesContainer').classList.add('hidden'); $('inputArea').classList.add('hidden');
+    $('previewBar').classList.add('hidden');
+}
+
+async function deleteMessage(msgTime) {
+    if (!activeChat || !me) return;
+    await loadDB();
+    const id = [me.nick, activeChat].sort().join('_');
+    if (!DB.messages?.[id]) return;
+    const msg = DB.messages[id].find(m => m.time === msgTime && m.from === me.nick);
+    if (msg) { msg.deleted = true; msg.text = ''; msg.file = null; await saveDB(); renderMessages(); }
+}
+
+function renderMessages() {
+    if (!activeChat || !me) return;
+    const id = [me.nick, activeChat].sort().join('_');
+    const msgs = (DB.messages||{})[id] || [];
+    const wasNearBottom = !userScrolledUp;
+    $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
+        if (m.deleted) return `<div class="msg deleted"><i>Сообщение удалено</i><div style="font-size:9px;opacity:0.5;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
+        let text = m.text || '';
+        let content = '';
+        if (m.file) {
+            const icons={image:'🖼️',video:'🎬',audio:'🎵'}, names={image:'Изображение',video:'Видео',audio:'Аудио'};
+            content += `<div class="file-attachment" onclick="window.open('${m.file}')"><div class="file-icon">${icons[m.fileType]||'📎'}</div><div class="file-info"><div class="file-name">${names[m.fileType]||'Файл'}</div><div class="file-size">Нажмите для открытия</div></div></div>`;
+        }
+        if (text) content += `<div>${text}</div>`;
+        const delBtn = m.from === me.nick ? `<button class="delete-btn" onclick="event.stopPropagation(); deleteMessage(${m.time})" title="Удалить">✕</button>` : '';
+        return `<div class="msg ${m.from===me.nick?'own':'other'}">${delBtn}${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
+    }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">💬 Начните переписку</div>';
+    if (wasNearBottom) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
+}
+
+async function sendMessage(text='', file=null, fileType='') {
+    if (!activeChat || !me) return;
+    const btn = $('sendBtn'); setLoading(btn, true);
+    try {
+        await loadDB();
+        const id = [me.nick, activeChat].sort().join('_');
+        if (!DB.messages) DB.messages = {};
+        if (!DB.messages[id]) DB.messages[id] = [];
+        DB.messages[id].push({from: me.nick, text, file, fileType, time: Date.now()});
+        await saveDB();
+        pendingFile = null; $('previewBar').classList.add('hidden');
+        $('messageInput').value = ''; userScrolledUp = false;
+        renderMessages();
+    } catch(e) { alert('Ошибка: '+e.message); }
+    finally { setLoading(btn, false); if (pendingFile) cancelFile(); }
+}
+
 $('sendBtn').onclick = () => { const text = $('messageInput').value.trim(); if (pendingFile) { sendMessage(text, pendingFile.data, pendingFile.type); } else if (text) { sendMessage(text); } };
 $('messageInput').onkeydown = e => { if (e.key==='Enter') $('sendBtn').click(); };
+
 async function handleFileSelect() { const file = $('fileInput').files[0]; if (!file) return; if (file.size>500*1024) { alert('Файл слишком большой (макс. 500 КБ)'); return; } const reader = new FileReader(); reader.onload = () => { const type = file.type.startsWith('image/')?'image':file.type.startsWith('video/')?'video':file.type.startsWith('audio/')?'audio':'file'; pendingFile = { data: reader.result, type, name: file.name }; $('previewBar').innerHTML = `<span>${type==='image'?'🖼️':type==='video'?'🎬':type==='audio'?'🎵':'📎'} ${file.name}</span> <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`; $('previewBar').classList.remove('hidden'); }; reader.readAsDataURL(file); $('fileInput').value = ''; }
 function cancelFile() { pendingFile=null; $('previewBar').classList.add('hidden'); }
+
 async function toggleVoice() { if (mediaRecorder?.state==='recording') { mediaRecorder.stop(); return; } try { stream = await navigator.mediaDevices.getUserMedia({audio:true}); mediaRecorder = new MediaRecorder(stream); audioChunks = []; mediaRecorder.ondataavailable = e => audioChunks.push(e.data); mediaRecorder.onstop = () => { const blob = new Blob(audioChunks, {type:'audio/webm'}); if (blob.size>500*1024) { alert('Слишком длинное (макс. 30 сек)'); return; } const reader = new FileReader(); reader.onload = () => { pendingFile = {data:reader.result, type:'audio', name:'Голосовое'}; $('previewBar').innerHTML = `🎤 Голосовое <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;cursor:pointer;">✕</button>`; $('previewBar').classList.remove('hidden'); }; reader.readAsDataURL(blob); stream.getTracks().forEach(t=>t.stop()); stream = null; $('voiceBtn').textContent='🎤'; $('voiceBtn').style.background='var(--input)'; }; mediaRecorder.start(); $('voiceBtn').textContent='⏹'; $('voiceBtn').style.background='var(--red)'; setTimeout(()=>{if(mediaRecorder?.state==='recording') mediaRecorder.stop();}, 30000); } catch { alert('Нет доступа к микрофону.'); } }
+
 function updateAvatar() { const file = $('avatarFileInput').files[0]; if (!file) return; if (file.size>100*1024) { alert('Аватар макс. 100 КБ'); return; } const reader = new FileReader(); reader.onload = () => { me.avatar = reader.result; updateUI(); }; reader.readAsDataURL(file); }
+
 async function searchUsers() { const q = norm($('friendNickInput').value); const sug = $('userSuggestions'); if (q.length<1) { sug.style.display='none'; return; } await loadDB(); const matches = DB.users.filter(u => norm(u.nick).includes(q) && norm(u.nick)!==norm(me.nick)).slice(0,5); sug.innerHTML = matches.length ? matches.map(u => `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}${u.verified?' ✓':''}</div>`).join('') : '<div class="suggestion-item">Никого</div>'; sug.style.display='block'; }
 function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestions').style.display='none'; }
+
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
 function closeSettings() { $('settingsPanel').classList.remove('open'); }
-$('btnSaveSettings').onclick = async () => { await loadDB(); const idx = DB.users.findIndex(u => norm(u.nick)===norm(me.nick)); if (idx===-1) return; const newNick = norm($('settingsNick').value); if (newNick !== norm(me.nick) && DB.users.find(u => norm(u.nick)===newNick)) return alert('Никнейм занят'); const newPass = $('settingsPass').value; if (newPass && newPass.length<8) return alert('Пароль от 8 символов'); DB.users[idx] = {...DB.users[idx], nick: newNick||me.nick, status: $('settingsStatus').value.trim()||'В сети', bio: $('settingsBio').value.trim(), email: norm($('settingsEmail').value)||me.email, avatar: me.avatar, color: me.color}; if (newPass.length>=8) DB.users[idx].pass = newPass; await saveDB(); me = DB.users[idx]; updateUI(); closeSettings(); refresh(); };
+
+$('btnSaveSettings').onclick = async () => {
+    await loadDB();
+    const idx = DB.users.findIndex(u => norm(u.nick)===norm(me.nick));
+    if (idx===-1) return;
+    const newNick = norm($('settingsNick').value);
+    if (newNick !== norm(me.nick) && DB.users.find(u => norm(u.nick)===newNick)) return alert('Никнейм занят');
+    const newPass = $('settingsPass').value;
+    if (newPass && newPass.length<8) return alert('Пароль от 8 символов');
+    DB.users[idx] = {...DB.users[idx], nick: newNick||me.nick, status: $('settingsStatus').value.trim()||'В сети', bio: $('settingsBio').value.trim(), email: norm($('settingsEmail').value)||me.email, avatar: me.avatar, color: me.color};
+    if (newPass.length>=8) DB.users[idx].pass = newPass;
+    await saveDB();
+    me = DB.users[idx];
+    updateUI(); closeSettings(); refresh();
+};
+
 $('btnLogout').onclick = () => { if(stream) stream.getTracks().forEach(t=>t.stop()); me = null; activeChat = null; $('appScreen').classList.add('hidden'); $('authScreen').classList.remove('hidden'); };
 function showDonate() { $('donateModal').classList.remove('hidden'); }
+
 $('btnAddFriend').onclick = () => { $('addFriendModal').classList.remove('hidden'); $('friendNickInput').value = ''; $('addFriendError').textContent = ''; $('addFriendSuccess').textContent = ''; $('userSuggestions').style.display = 'none'; };
 $('btnCancelAddFriend').onclick = () => $('addFriendModal').classList.add('hidden');
 $('btnConfirmAddFriend').onclick = async () => { const nick = $('friendNickInput').value.trim(); if (!nick) return $('addFriendError').textContent = 'Введите ник'; if (norm(nick)===norm(me.nick)) return $('addFriendError').textContent = 'Это вы'; await loadDB(); const friend = DB.users.find(u => norm(u.nick)===norm(nick)); if (!friend) return $('addFriendError').textContent = 'Не найден'; const u = DB.users.find(u => norm(u.nick)===norm(me.nick)); if (u.friends.includes(friend.nick)) return $('addFriendError').textContent = 'Уже в друзьях'; u.friends.push(friend.nick); friend.friends.push(me.nick); await saveDB(); $('addFriendSuccess').textContent = 'Добавлен!'; setTimeout(() => { $('addFriendModal').classList.add('hidden'); refresh(); }, 800); };
