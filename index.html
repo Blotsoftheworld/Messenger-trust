@@ -188,6 +188,11 @@ const themeColors = ['#6c5ce7','#e74c3c','#f39c12','#3498db','#1abc9c','#e91e63'
 
 function norm(s) { return String(s||'').toLowerCase().trim(); }
 
+// КУКИ
+function setCookie(name, value, days) { const d = new Date(); d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000)); document.cookie = name + "=" + value + ";expires=" + d.toUTCString() + ";path=/"; }
+function getCookie(name) { const value = "; " + document.cookie; const parts = value.split("; " + name + "="); if (parts.length === 2) return parts.pop().split(";").shift(); return null; }
+function deleteCookie(name) { document.cookie = name + "=;expires=Thu, 01 Jan 1970 00:00:00 UTC;path=/"; }
+
 async function loadDB() { try { const r = await fetch(FIREBASE_URL + '/.json'); if (r.ok) { const d = await r.json(); if (d) { DB.users = d.users || {}; DB.messages = d.messages || {}; } } } catch(e) {} }
 async function saveUser(user) { await fetch(FIREBASE_URL + '/users/' + user.nick + '.json', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(user) }); }
 
@@ -209,10 +214,12 @@ $('regForm').onsubmit = async (e) => {
     const verified = email === CREATOR_EMAIL;
     const user = { nick, email, pass, avatar: '', color: themeColors[0], status: 'В сети', bio: '', friends: [], verified };
     DB.users[nick] = user; await saveUser(user);
-    me = user; showApp();
+    me = user;
+    setCookie('trust_nick', user.nick, 30); // запоминаем на 30 дней
+    showApp();
 };
 
-// ВХОД (проверка через Firebase)
+// ВХОД (с куками)
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault(); $('loginError').textContent = '';
     const nick = norm($('loginNick').value), email = norm($('loginEmail').value), pass = $('loginPass').value;
@@ -220,7 +227,9 @@ $('loginForm').onsubmit = async (e) => {
     if (r.ok) {
         const u = await r.json();
         if (u && u.email === email && u.pass === pass) {
-            DB.users[nick] = u; me = u; showApp(); return;
+            DB.users[nick] = u; me = u;
+            setCookie('trust_nick', u.nick, 30);
+            showApp(); return;
         }
     }
     $('loginError').textContent = 'Неверные данные';
@@ -252,7 +261,7 @@ function updateUI() {
     document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.color = d.dataset.color; applyTheme(me.color); updateUI(); });
 }
 
-// ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений)
+// ОСТАЛЬНЫЕ ФУНКЦИИ
 async function toggleVerify(targetNick) { if (!me || norm(me.email) !== CREATOR_EMAIL) return; const r = await fetch(FIREBASE_URL + '/users/' + targetNick + '.json'); if (r.ok) { const u = await r.json(); if (u) { u.verified = !u.verified; await saveUser(u); DB.users[targetNick] = u; if (viewingProfile === targetNick) renderProfileView(u); refresh(); } } }
 function openProfile() { viewingProfile = me.nick; renderProfileView(me); $('profilePanel').classList.add('open'); $('btnOpenChat').classList.add('hidden'); }
 function closeProfile() { $('profilePanel').classList.remove('open'); }
@@ -278,7 +287,7 @@ function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestion
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
 function closeSettings() { $('settingsPanel').classList.remove('open'); }
 $('btnSaveSettings').onclick = async () => { const nn = norm($('settingsNick').value); if (nn !== norm(me.nick)) { const r = await fetch(FIREBASE_URL + '/users/' + nn + '.json'); if (r.ok && await r.json()) return alert('Никнейм занят'); } const np = $('settingsPass').value; if (np && np.length < 4) return alert('Пароль от 4'); me.nick = nn || me.nick; me.status = $('settingsStatus').value.trim() || 'В сети'; me.bio = $('settingsBio').value.trim(); me.email = norm($('settingsEmail').value) || me.email; if (np.length >= 4) me.pass = np; await saveUser(me); updateUI(); closeSettings(); refresh(); };
-$('btnLogout').onclick = () => { if (stream) stream.getTracks().forEach(t => t.stop()); me = null; activeChat = null; $('appScreen').classList.add('hidden'); $('authScreen').classList.remove('hidden'); };
+$('btnLogout').onclick = () => { if (stream) stream.getTracks().forEach(t => t.stop()); deleteCookie('trust_nick'); me = null; activeChat = null; $('appScreen').classList.add('hidden'); $('authScreen').classList.remove('hidden'); };
 function showDonate() { $('donateModal').classList.remove('hidden'); }
 $('btnAddFriend').onclick = () => { $('addFriendModal').classList.remove('hidden'); $('friendNickInput').value = ''; $('addFriendError').textContent = ''; $('addFriendSuccess').textContent = ''; $('userSuggestions').style.display = 'none'; };
 $('btnCancelAddFriend').onclick = () => $('addFriendModal').classList.add('hidden');
@@ -286,7 +295,16 @@ $('btnConfirmAddFriend').onclick = async () => { const nick = $('friendNickInput
 $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display = 'none'; });
-loadDB();
+
+// АВТОВХОД
+(async () => {
+    await loadDB();
+    const savedNick = getCookie('trust_nick');
+    if (savedNick && DB.users[savedNick]) {
+        me = DB.users[savedNick];
+        showApp();
+    }
+})();
 </script>
 </body>
 </html>
