@@ -48,9 +48,11 @@
         .chat-item.active { background: rgba(139,92,246,0.18); }
         .main { flex: 1; display: flex; flex-direction: column; background: var(--chat); min-width: 0; }
         .messages { flex: 1; overflow-y: auto; padding: 15px; display: flex; flex-direction: column; gap: 6px; }
-        .msg { max-width: 78%; padding: 8px 12px; border-radius: 16px; font-size: 13px; word-wrap: break-word; }
+        .msg { max-width: 78%; padding: 8px 12px; border-radius: 16px; font-size: 13px; word-wrap: break-word; position: relative; }
         .msg.own { align-self: flex-end; background: var(--msg-own); color: #fff; border-bottom-right-radius: 4px; }
         .msg.other { align-self: flex-start; background: var(--msg-other); border-bottom-left-radius: 4px; }
+        .msg .delete-msg { cursor: pointer; opacity: 0.3; font-size: 11px; margin-left: 6px; transition: 0.2s; }
+        .msg .delete-msg:hover { opacity: 1; }
         .file-attachment { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: rgba(0,0,0,0.3); border-radius: 8px; margin: 4px 0; cursor: pointer; }
         .file-attachment:hover { background: rgba(0,0,0,0.5); }
         .file-icon { width: 32px; height: 32px; border-radius: 6px; background: var(--input); display: flex; align-items: center; justify-content: center; font-size: 16px; }
@@ -225,7 +227,7 @@
         <a href="https://t.me/Blotsoftheworld" target="_blank" class="tg-link">@Blotsoftheworld</a>
         <a href="https://t.me/Eruaxis" target="_blank" class="tg-link">@Eruaxis</a>
         <p style="color:var(--text3);font-size:11px;margin-top:10px;">Спасибо за вашу поддержку! ❤️</p>
-        <button onclick="$('donateModal').classList.add('hidden')" style="margin-top:8px;width:100%;">Закрыть</button>
+        <button onclick="document.getElementById('donateModal').classList.add('hidden')" style="margin-top:8px;width:100%;">Закрыть</button>
     </div>
 </div>
 
@@ -269,9 +271,18 @@ async function loadDB() {
     const data = (await r.json()).record;
     return (data && data.users) ? data : { users: [], messages: {} };
 }
+
+// ★★★ ИСПРАВЛЕННАЯ saveDB с проверкой ответа ★★★
 async function saveDB(data) {
     if (!data || !data.users) return;
-    await fetch(API_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY }, body: JSON.stringify(data) });
+    const response = await fetch(API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Master-Key': API_KEY },
+        body: JSON.stringify(data)
+    });
+    if (!response.ok) {
+        throw new Error(`Ошибка сохранения: ${response.status} ${response.statusText}`);
+    }
 }
 
 function setLoading(btn, loading) { btn.disabled = loading; btn.innerHTML = loading ? '<span class="spinner"></span>' : btn.getAttribute('data-text'); }
@@ -421,13 +432,14 @@ async function refresh() {
 function openChat(p) { activeChat=p; userScrolledUp=false; $('emptyChat').classList.add('hidden'); $('chatHead').classList.remove('hidden'); $('messagesContainer').classList.remove('hidden'); $('inputArea').classList.remove('hidden'); $('partnerName').textContent=p; $('partnerAvatar').textContent=p[0].toUpperCase(); $('partnerAvatar').style.backgroundImage='none'; $('partnerAvatar').style.backgroundColor='var(--accent)'; const oldBadge = $('partnerAvatar').querySelector('.verified-badge'); if (oldBadge) oldBadge.remove(); loadDB().then(db => { const friend = db.users.find(u => norm(u.nick)===norm(p)); if (friend) { $('partnerStatus').textContent = isOnline(friend) ? '🟢 В сети' : '⚫ Не в сети'; if (friend.verified) { const badge = document.createElement('div'); badge.className='verified-badge'; badge.textContent='✔'; $('partnerAvatar').style.position='relative'; $('partnerAvatar').appendChild(badge); } } }); if (window.innerWidth<=768) $('sidebar').classList.add('mobile-hidden'); refresh(); }
 function closeChat() { activeChat=null; $('sidebar').classList.remove('mobile-hidden'); $('emptyChat').classList.remove('hidden'); $('chatHead').classList.add('hidden'); $('messagesContainer').classList.add('hidden'); $('inputArea').classList.add('hidden'); $('previewBar').classList.add('hidden'); }
 
+// ★★★ ФУНКЦИЯ РЕНДЕРИНГА С КНОПКОЙ УДАЛЕНИЯ ★★★
 function renderMessages(db) {
     if (!activeChat || !me) return;
     const id = [me.nick, activeChat].sort().join('_');
     const msgs = (db.messages||{})[id] || [];
     const key = getKey(me.nick, activeChat);
     const wasNearBottom = !userScrolledUp;
-    $('messagesContainer').innerHTML = msgs.length ? msgs.map(m => {
+    $('messagesContainer').innerHTML = msgs.length ? msgs.map((m, i) => {
         let text = m.text || '';
         if (m.encrypted && encryptionEnabled) text = decrypt(text, key) || '[Не расшифровано]';
         let content = '';
@@ -436,12 +448,39 @@ function renderMessages(db) {
             content += `<div class="file-attachment" onclick="window.open('${m.file}')"><div class="file-icon">${icons[m.fileType]||'📎'}</div><div class="file-info"><div class="file-name">${names[m.fileType]||'Файл'}</div><div class="file-size">Нажмите для открытия</div></div></div>`;
         }
         if (text) content += `<div>${text}</div>`;
-        return `<div class="msg ${m.from===me.nick?'own':'other'}">${content}<div style="font-size:9px;opacity:0.6;margin-top:3px;text-align:right">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
+        // Кнопка удаления для своих сообщений
+        let deleteBtn = '';
+        if (m.from === me.nick) {
+            deleteBtn = `<span class="delete-msg" onclick="deleteMessage(${i})" title="Удалить сообщение">✕</span>`;
+        }
+        return `<div class="msg ${m.from===me.nick?'own':'other'}">${content}<div style="display:flex;justify-content:flex-end;align-items:center;gap:4px;margin-top:3px;"><span style="font-size:9px;opacity:0.6;">${new Date(m.time).toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'})}</span>${deleteBtn}</div></div>`;
     }).join('') : '<div style="text-align:center;color:var(--text3);padding:30px">💜 Начните переписку!</div>';
     if (wasNearBottom) $('messagesContainer').scrollTop = $('messagesContainer').scrollHeight;
 }
 
-// ★ ГАРАНТИРОВАННАЯ ОТПРАВКА ★
+// ★★★ НОВАЯ ФУНКЦИЯ УДАЛЕНИЯ СООБЩЕНИЯ ★★★
+async function deleteMessage(index) {
+    if (!activeChat || !me) return;
+    if (!confirm('Удалить это сообщение?')) return;
+    try {
+        const db = await loadDB();
+        const id = [me.nick, activeChat].sort().join('_');
+        const msgs = db.messages[id] || [];
+        if (index < 0 || index >= msgs.length) return;
+        if (msgs[index].from !== me.nick) return alert('Нельзя удалить чужое сообщение');
+        msgs.splice(index, 1);
+        if (msgs.length === 0) delete db.messages[id];
+        else db.messages[id] = msgs;
+        await saveDB(db);
+        userScrolledUp = false;
+        renderMessages(db);
+        refresh();
+    } catch(e) {
+        alert('Ошибка удаления: ' + e.message);
+    }
+}
+
+// ★★★ ГАРАНТИРОВАННАЯ ОТПРАВКА (с проверкой сохранения) ★★★
 async function sendMessage(text='', file=null, fileType='') {
     if (!activeChat || !me) return;
     const btn = $('sendBtn');
@@ -454,17 +493,15 @@ async function sendMessage(text='', file=null, fileType='') {
         const key = getKey(me.nick, activeChat);
         const msgText = text && encryptionEnabled ? encrypt(text, key) : text;
         db.messages[id].push({from: me.nick, text: msgText, file, fileType, time: Date.now(), encrypted: encryptionEnabled && !!text});
-        await saveDB(db);
+        await saveDB(db);  // теперь выбросит исключение при ошибке
         pendingFile = null;
         $('previewBar').classList.add('hidden');
         $('messageInput').value = '';
         userScrolledUp = false;
-        // Сразу рендерим сообщения из обновлённой базы
-        await renderMessages(db);
-        // Обновляем список чатов
-        await refresh();
+        renderMessages(db);
+        refresh();
     } catch(e) {
-        alert('Ошибка: ' + (e.message || 'Неизвестная ошибка'));
+        alert('Ошибка отправки: ' + (e.message || 'Неизвестная ошибка'));
     } finally {
         setLoading(btn, false);
         if (pendingFile) cancelFile();
