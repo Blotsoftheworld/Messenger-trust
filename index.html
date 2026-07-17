@@ -201,16 +201,32 @@ const themeColors = ['#6c5ce7','#e74c3c','#f39c12','#3498db','#1abc9c','#e91e63'
 
 function norm(s) { return String(s||'').toLowerCase().trim(); }
 
-async function loadDB() { try { const r = await fetch(API_URL); if (r.ok) { const d = await r.json(); if (d?.users) { DB = d; return true; } } } catch(e) {} return false; }
-async function saveDB() { try { await fetch(API_URL, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(DB) }); return true; } catch(e) { return false; } }
+// Загрузка БД (не блокирует интерфейс)
+async function loadDB() {
+    try {
+        const r = await fetch(API_URL);
+        if (r.ok) { const d = await r.json(); if (d?.users) { DB = d; return true; } }
+    } catch(e) {}
+    return false;
+}
 
+// Сохранение БД в фоне (без await)
+function saveDB() {
+    fetch(API_URL, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(DB)
+    }).catch(() => {});
+}
+
+// Переключение вкладок
 $('tabLogin').onclick = () => { $('tabLogin').classList.add('active'); $('tabReg').classList.remove('active'); $('loginForm').classList.add('active'); $('regForm').classList.remove('active'); $('resetForm').classList.remove('active'); $('tabReset').style.display='none'; $('tabLogin').style.display='block'; $('tabReg').style.display='block'; };
 $('tabReg').onclick = () => { $('tabReg').classList.add('active'); $('tabLogin').classList.remove('active'); $('regForm').classList.add('active'); $('loginForm').classList.remove('active'); $('resetForm').classList.remove('active'); $('tabReset').style.display='none'; $('tabLogin').style.display='block'; $('tabReg').style.display='block'; };
 $('forgotPassBtn').onclick = () => { $('tabLogin').style.display='none'; $('tabReg').style.display='none'; $('tabReset').style.display='block'; $('tabReset').classList.add('active'); $('loginForm').classList.remove('active'); $('regForm').classList.remove('active'); $('resetForm').classList.add('active'); };
 $('backToLogin').onclick = () => { $('tabLogin').style.display='block'; $('tabReg').style.display='block'; $('tabReset').style.display='none'; $('tabLogin').classList.add('active'); $('loginForm').classList.add('active'); $('regForm').classList.remove('active'); $('resetForm').classList.remove('active'); };
 
-// МГНОВЕННАЯ РЕГИСТРАЦИЯ
-$('regForm').onsubmit = async (e) => {
+// МГНОВЕННАЯ РЕГИСТРАЦИЯ (без ожидания сервера)
+$('regForm').onsubmit = (e) => {
     e.preventDefault();
     $('regError').textContent = '';
     const nick = norm($('regNick').value), email = norm($('regEmail').value);
@@ -218,36 +234,42 @@ $('regForm').onsubmit = async (e) => {
     if (pass !== pass2) return $('regError').textContent = 'Пароли не совпадают';
     if (nick.length < 3) return $('regError').textContent = 'Никнейм от 3 символов';
     if (pass.length < 4) return $('regError').textContent = 'Пароль от 4 символов';
-    await loadDB();
     if (DB.users.find(u => norm(u.nick) === nick)) return $('regError').textContent = 'Никнейм занят';
     if (DB.users.find(u => norm(u.email) === email)) return $('regError').textContent = 'Email занят';
+    
     const verified = email === CREATOR_EMAIL;
     const user = { nick, email, pass, avatar: '', color: themeColors[0], status: 'В сети', bio: '', friends: [], lastOnline: Date.now(), verified };
     DB.users.push(user);
-    saveDB();
+    saveDB(); // сохраняем в фоне
     me = user;
     showApp();
 };
 
 // МГНОВЕННЫЙ ВХОД
-$('loginForm').onsubmit = async (e) => {
+$('loginForm').onsubmit = (e) => {
     e.preventDefault();
     $('loginError').textContent = '';
     const nick = norm($('loginNick').value), email = norm($('loginEmail').value), pass = $('loginPass').value;
-    await loadDB();
     const user = DB.users.find(u => norm(u.nick) === nick && norm(u.email) === email && u.pass === pass);
-    if (!user) return $('loginError').textContent = 'Неверные данные';
+    if (!user) {
+        // Пробуем загрузить с сервера
+        loadDB().then(() => {
+            const u = DB.users.find(u => norm(u.nick) === nick && norm(u.email) === email && u.pass === pass);
+            if (u) { me = u; showApp(); }
+            else { $('loginError').textContent = 'Неверные данные'; }
+        });
+        return;
+    }
     me = user;
     showApp();
 };
 
 // МГНОВЕННЫЙ СБРОС
-$('resetForm').onsubmit = async (e) => {
+$('resetForm').onsubmit = (e) => {
     e.preventDefault();
     $('resetError').textContent = ''; $('resetSuccess').textContent = '';
     const nick = norm($('resetNick').value), email = norm($('resetEmail').value), newPass = $('resetNewPass').value;
     if (newPass.length < 4) return $('resetError').textContent = 'Пароль от 4 символов';
-    await loadDB();
     const idx = DB.users.findIndex(u => norm(u.nick) === nick && norm(u.email) === email);
     if (idx === -1) return $('resetError').textContent = 'Не найден';
     DB.users[idx].pass = newPass;
@@ -260,6 +282,7 @@ function showApp() {
     applyTheme(me.color || themeColors[0]); updateUI(); refresh();
     refreshTimer = setInterval(refresh, 2000);
     $('messagesContainer').addEventListener('scroll', () => { userScrolledUp = $('messagesContainer').scrollHeight - $('messagesContainer').scrollTop - $('messagesContainer').clientHeight > 80; });
+    loadDB(); // загружаем свежие данные в фоне
 }
 
 function applyTheme(c) { document.documentElement.style.setProperty('--accent', c); document.documentElement.style.setProperty('--msg-own', c); }
@@ -279,6 +302,7 @@ function updateUI() {
     document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.color = d.dataset.color; applyTheme(me.color); updateUI(); });
 }
 
+// ОСТАЛЬНЫЕ ФУНКЦИИ БЕЗ ИЗМЕНЕНИЙ
 async function toggleVerify(targetNick) { if (!me || norm(me.email) !== CREATOR_EMAIL) return; await loadDB(); const user = DB.users.find(u => norm(u.nick) === norm(targetNick)); if (!user) return; user.verified = !user.verified; saveDB(); if (viewingProfile === targetNick) renderProfileView(user); refresh(); }
 function openProfile() { viewingProfile = me.nick; renderProfileView(me); $('profilePanel').classList.add('open'); $('btnOpenChat').classList.add('hidden'); }
 function closeProfile() { $('profilePanel').classList.remove('open'); viewingProfile = null; }
@@ -312,6 +336,9 @@ $('btnConfirmAddFriend').onclick = async () => { const nick = $('friendNickInput
 $('searchChats').oninput = refresh;
 $('btnBack').onclick = closeChat;
 document.addEventListener('click', (e) => { if (!$('friendNickInput')?.contains(e.target)) $('userSuggestions').style.display = 'none'; });
+
+// Загружаем БД при старте
+loadDB();
 </script>
 </body>
 </html>
