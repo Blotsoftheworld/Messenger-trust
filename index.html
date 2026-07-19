@@ -89,7 +89,7 @@
     <div class="card">
         <div style="font-size:32px;">🔐</div>
         <h1>Доверие</h1>
-        <p style="color:var(--text2);font-size:13px;">Сохраните данные для входа!</p>
+        <p style="color:var(--text2);font-size:13px;">Шифрованный мессенджер</p>
         <div class="tabs">
             <button class="tab active" id="tabLogin">Вход</button>
             <button class="tab" id="tabReg">Регистрация</button>
@@ -197,7 +197,6 @@ $('tabReg').onclick = () => { $('tabReg').classList.add('active'); $('tabLogin')
 $('forgotPassBtn').onclick = () => { $('tabLogin').style.display='none'; $('tabReg').style.display='none'; $('tabReset').style.display='block'; $('tabReset').classList.add('active'); $('loginForm').classList.remove('active'); $('regForm').classList.remove('active'); $('resetForm').classList.add('active'); };
 $('backToLogin').onclick = () => { $('tabLogin').style.display='block'; $('tabReg').style.display='block'; $('tabReset').style.display='none'; $('tabLogin').classList.add('active'); $('loginForm').classList.add('active'); $('regForm').classList.remove('active'); $('resetForm').classList.remove('active'); };
 
-// РЕГИСТРАЦИЯ
 $('regForm').onsubmit = async (e) => {
     e.preventDefault(); $('regError').textContent = '';
     const nick = norm($('regNick').value), email = norm($('regEmail').value);
@@ -211,11 +210,10 @@ $('regForm').onsubmit = async (e) => {
     const user = { nick, email, pass, avatar: '', color: themeColors[0], status: 'В сети', bio: '', friends: [], verified };
     DB.users[nick] = user; await saveUser(user);
     me = user;
-    alert('✅ Аккаунт создан!\n\nНикнейм: ' + user.nick + '\nEmail: ' + user.email + '\nПароль: ' + user.pass + '\n\nЗапиши эти данные!');
+    alert('✅ Аккаунт создан и сохранён на сервере!\n\nНикнейм: ' + user.nick + '\nEmail: ' + user.email + '\nПароль: ' + user.pass + '\n\nЗапомни эти данные для входа с других устройств.');
     showApp();
 };
 
-// ВХОД
 $('loginForm').onsubmit = async (e) => {
     e.preventDefault(); $('loginError').textContent = '';
     const nick = norm($('loginNick').value), email = norm($('loginEmail').value), pass = $('loginPass').value;
@@ -226,16 +224,15 @@ $('loginForm').onsubmit = async (e) => {
             DB.users[nick] = u; me = u; showApp(); return;
         }
     }
-    $('loginError').textContent = 'Неверные данные. Если забыл — нажми "Забыли пароль?"';
+    $('loginError').textContent = 'Неверные данные';
 };
 
-// СБРОС ПАРОЛЯ
 $('resetForm').onsubmit = async (e) => {
     e.preventDefault(); $('resetError').textContent = ''; $('resetSuccess').textContent = '';
     const nick = norm($('resetNick').value), email = norm($('resetEmail').value), np = $('resetNewPass').value;
     if (np.length < 4) return $('resetError').textContent = 'Пароль от 4';
     const r = await fetch(FIREBASE_URL + '/users/' + nick + '.json');
-    if (r.ok) { const u = await r.json(); if (u?.email === email) { u.pass = np; await saveUser(u); $('resetSuccess').textContent = 'Пароль изменён! Новый пароль: ' + np; return; } }
+    if (r.ok) { const u = await r.json(); if (u?.email === email) { u.pass = np; await saveUser(u); $('resetSuccess').textContent = 'Пароль изменён!'; return; } }
     $('resetError').textContent = 'Не найден';
 };
 
@@ -255,7 +252,6 @@ function updateUI() {
     document.querySelectorAll('.color-dot').forEach(d => d.onclick = () => { me.color = d.dataset.color; applyTheme(me.color); updateUI(); });
 }
 
-// ОСТАЛЬНЫЕ ФУНКЦИИ (без изменений)
 async function toggleVerify(targetNick) { if (!me || norm(me.email) !== CREATOR_EMAIL) return; const r = await fetch(FIREBASE_URL + '/users/' + targetNick + '.json'); if (r.ok) { const u = await r.json(); if (u) { u.verified = !u.verified; await saveUser(u); DB.users[targetNick] = u; if (viewingProfile === targetNick) renderProfileView(u); refresh(); } } }
 function openProfile() { viewingProfile = me.nick; renderProfileView(me); $('profilePanel').classList.add('open'); $('btnOpenChat').classList.add('hidden'); }
 function closeProfile() { $('profilePanel').classList.remove('open'); }
