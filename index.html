@@ -172,7 +172,20 @@
     <div style="padding:16px;display:flex;flex-direction:column;gap:8px"><button id="btnSaveSettings">Сохранить</button><button id="btnLogout" style="background:var(--red)">Выйти</button></div>
 </div>
 
-<div class="modal hidden" id="addFriendModal"><div class="card"><h3>Добавить друга</h3><div style="position:relative;"><input id="friendNickInput" placeholder="Никнейм" oninput="searchUsers()" onfocus="searchUsers()"><div class="suggestions" id="userSuggestions"></div></div><div class="error" id="addFriendError"></div><div class="success" id="addFriendSuccess"></div><button id="btnConfirmAddFriend" style="margin-top:10px;">Добавить</button><button id="btnCancelAddFriend" style="background:none;border:2px solid var(--border);margin-top:8px">Отмена</button></div></div>
+<div class="modal hidden" id="addFriendModal">
+    <div class="card">
+        <h3>Добавить друга</h3>
+        <div style="position:relative;">
+            <input id="friendNickInput" placeholder="Никнейм" oninput="searchUsers()" onfocus="searchUsers()">
+            <div class="suggestions" id="userSuggestions"></div>
+        </div>
+        <button onclick="showAllUsers()" style="background:none;border:2px solid var(--border);margin-top:6px;width:100%;">📋 Показать всех пользователей</button>
+        <div class="error" id="addFriendError"></div>
+        <div class="success" id="addFriendSuccess"></div>
+        <button id="btnConfirmAddFriend" style="margin-top:10px;">Добавить</button>
+        <button id="btnCancelAddFriend" style="background:none;border:2px solid var(--border);margin-top:6px">Отмена</button>
+    </div>
+</div>
 <div class="modal hidden" id="donateModal"><div class="card"><h3>Поддержать проект</h3><p style="color:var(--text2);margin:12px 0;">Напишите нам в Telegram:</p><a href="https://t.me/Blotsoftheworld" target="_blank" class="tg-link">@Blotsoftheworld</a><a href="https://t.me/Eruaxis" target="_blank" class="tg-link">@Eruaxis</a><button onclick="$('donateModal').classList.add('hidden')" style="margin-top:10px;width:100%;">Закрыть</button></div></div>
 
 <script>
@@ -272,7 +285,39 @@ async function handleFileSelect() { const file = $('fileInput').files[0]; if (!f
 function cancelFile() { pendingFile = null; $('previewBar').classList.add('hidden'); }
 async function toggleVoice() { if (mediaRecorder?.state === 'recording') { mediaRecorder.stop(); return; } try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); mediaRecorder = new MediaRecorder(stream); audioChunks = []; mediaRecorder.ondataavailable = e => audioChunks.push(e.data); mediaRecorder.onstop = () => { const blob = new Blob(audioChunks, { type: 'audio/webm' }); if (blob.size > 500 * 1024) { alert('Макс. 30 сек'); return; } const reader = new FileReader(); reader.onload = () => { pendingFile = { data: reader.result, type: 'audio', name: 'Голосовое' }; $('previewBar').innerHTML = `🎤 Голосовое <button onclick="cancelFile()" style="background:var(--red);padding:4px 10px;border-radius:12px;border:none;color:#fff;">✕</button>`; $('previewBar').classList.remove('hidden'); }; reader.readAsDataURL(blob); stream.getTracks().forEach(t => t.stop()); stream = null; $('voiceBtn').textContent = '🎤'; $('voiceBtn').style.background = 'var(--input)'; }; mediaRecorder.start(); $('voiceBtn').textContent = '⏹'; $('voiceBtn').style.background = 'var(--red)'; setTimeout(() => { if (mediaRecorder?.state === 'recording') mediaRecorder.stop(); }, 30000); } catch { alert('Нет доступа к микрофону.'); } }
 function updateAvatar() { const file = $('avatarFileInput').files[0]; if (!file) return; if (file.size > 100 * 1024) { alert('Макс. 100 КБ'); return; } const reader = new FileReader(); reader.onload = () => { me.avatar = reader.result; updateUI(); saveUser(me); }; reader.readAsDataURL(file); }
-async function searchUsers() { const q = norm($('friendNickInput').value); const sug = $('userSuggestions'); if (q.length < 1) { sug.style.display = 'none'; return; } const r = await fetch(FIREBASE_URL + '/users.json'); if (r.ok) { const users = await r.json() || {}; const matches = Object.values(users).filter(u => norm(u.nick).includes(q) && norm(u.nick) !== norm(me.nick)).slice(0, 5); sug.innerHTML = matches.length ? matches.map(u => `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}${u.verified ? ' ✓' : ''}</div>`).join('') : '<div class="suggestion-item">Никого</div>'; sug.style.display = 'block'; } }
+
+// ПОИСК ПОЛЬЗОВАТЕЛЕЙ (нечувствителен к регистру)
+async function searchUsers() {
+    const q = norm($('friendNickInput').value);
+    const sug = $('userSuggestions');
+    if (q.length < 1) { sug.style.display = 'none'; return; }
+    const r = await fetch(FIREBASE_URL + '/users.json');
+    if (r.ok) {
+        const users = await r.json() || {};
+        const matches = Object.values(users).filter(u => 
+            norm(u.nick).includes(q) && norm(u.nick) !== norm(me.nick)
+        ).slice(0, 5);
+        sug.innerHTML = matches.length ? matches.map(u => 
+            `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}${u.verified ? ' ✓' : ''}</div>`
+        ).join('') : '<div class="suggestion-item" style="color:var(--text3)">Никого не найдено</div>';
+        sug.style.display = 'block';
+    }
+}
+
+// ПОКАЗАТЬ ВСЕХ ПОЛЬЗОВАТЕЛЕЙ
+async function showAllUsers() {
+    const sug = $('userSuggestions');
+    const r = await fetch(FIREBASE_URL + '/users.json');
+    if (r.ok) {
+        const users = await r.json() || {};
+        const matches = Object.values(users).filter(u => norm(u.nick) !== norm(me.nick));
+        sug.innerHTML = matches.length ? matches.map(u => 
+            `<div class="suggestion-item" onclick="selectUser('${u.nick}')">${u.nick}${u.verified ? ' ✓' : ''}</div>`
+        ).join('') : '<div class="suggestion-item" style="color:var(--text3)">Нет пользователей</div>';
+        sug.style.display = 'block';
+    }
+}
+
 function selectUser(nick) { $('friendNickInput').value = nick; $('userSuggestions').style.display = 'none'; }
 function openSettings() { updateUI(); $('settingsPanel').classList.add('open'); }
 function closeSettings() { $('settingsPanel').classList.remove('open'); }
